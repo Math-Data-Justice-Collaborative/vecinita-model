@@ -39,7 +39,7 @@ tests/
 
 ```bash
 # 1. Clone the repo and create a virtual environment
-python -m venv .venv && source .venv/bin/activate
+python3.11 -m venv .venv && source .venv/bin/activate
 
 # 2. Install the package and dev dependencies
 pip install -e ".[dev]"
@@ -47,10 +47,13 @@ pip install -e ".[dev]"
 # 3. Copy the example env file
 cp .env.example .env
 
-# 4. Run tests
-pytest
+# 4. Run quality checks
+make lint
 
-# 5. Serve locally (hot-reload, no GPU required)
+# 5. Run tests
+make test
+
+# 6. Serve locally (hot-reload, no GPU required)
 modal serve src/vecinita/app.py
 ```
 
@@ -184,7 +187,16 @@ in `src/vecinita/app.py`:
 ## Running tests
 
 ```bash
-pytest -v
+make test
 ```
 
+`pytest` is configured to collect coverage for `src/vecinita` and fail below 95%.
 Tests mock the Ollama client so no running server or GPU is needed.
+
+## Running lint
+
+```bash
+make lint
+```
+
+GitHub Actions runs `make lint` first, then `make test`, so pull requests fail fast on style and import issues before running the full suite.
