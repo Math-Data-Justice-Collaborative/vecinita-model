@@ -149,3 +149,63 @@ class TestOllamaBackend:
 
         with pytest.raises(RuntimeError, match="did not start"):
             OllamaBackend.start_server()
+
+    def test_start_server_timeout_handles_terminate_failure(self, monkeypatch):
+        proc = MagicMock(spec=subprocess.Popen)
+        proc.terminate.side_effect = RuntimeError("cannot terminate")
+        client_factory = MagicMock()
+        client_factory.return_value.list.side_effect = RuntimeError("still booting")
+
+        class FakeTime:
+            def __init__(self):
+                self.now = 100.0
+
+            def time(self):
+                self.now += 31.0
+                return self.now
+
+        fake_time = FakeTime()
+        warning = MagicMock()
+
+        monkeypatch.setattr(subprocess, "Popen", MagicMock(return_value=proc))
+        monkeypatch.setattr("time.time", fake_time.time)
+        monkeypatch.setattr("time.sleep", MagicMock())
+        monkeypatch.setattr("ollama.Client", client_factory)
+        monkeypatch.setattr("vecinita.models.ollama.logger.warning", warning)
+
+        with pytest.raises(RuntimeError, match="did not start"):
+            OllamaBackend.start_server()
+
+        warning.assert_called_once()
+
+    def test_start_server_timeout_handles_kill_failure(self, monkeypatch):
+        proc = MagicMock(spec=subprocess.Popen)
+        proc.wait.side_effect = subprocess.TimeoutExpired(cmd="ollama", timeout=5)
+        proc.kill.side_effect = RuntimeError("cannot kill")
+        client_factory = MagicMock()
+        client_factory.return_value.list.side_effect = RuntimeError("still booting")
+
+        class FakeTime:
+            def __init__(self):
+                self.now = 100.0
+
+            def time(self):
+                self.now += 31.0
+                return self.now
+
+        fake_time = FakeTime()
+        warning = MagicMock()
+
+        monkeypatch.setattr(subprocess, "Popen", MagicMock(return_value=proc))
+        monkeypatch.setattr("time.time", fake_time.time)
+        monkeypatch.setattr("time.sleep", MagicMock())
+        monkeypatch.setattr("ollama.Client", client_factory)
+        monkeypatch.setattr("vecinita.models.ollama.logger.warning", warning)
+
+        with pytest.raises(RuntimeError, match="did not start"):
+            OllamaBackend.start_server()
+
+        proc.terminate.assert_called_once_with()
+        proc.wait.assert_called_once_with(timeout=5)
+        proc.kill.assert_called_once_with()
+        warning.assert_called_once()

@@ -84,7 +84,7 @@ def create_app(ollama_host: str = settings.ollama_host) -> FastAPI:  # noqa: B00
             )
         except Exception as exc:
             logger.error("Chat request failed: %s", exc)
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
+            raise HTTPException(status_code=500, detail="An error occurred processing your request") from exc
 
     # ------------------------------------------------------------------
     # /stream

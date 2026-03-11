@@ -15,7 +15,10 @@ class Message(BaseModel):
 class ChatRequest(BaseModel):
     """Request body for the /chat and /stream endpoints."""
 
-    model: str = Field(default="llama3.2", description="Ollama model identifier")
+    model: str = Field(
+        default_factory=lambda: __import__('vecinita.config', fromlist=['settings']).settings.default_model,
+        description="Ollama model identifier"
+    )
     messages: list[Message] = Field(
         ..., min_length=1, description="Conversation history"
     )

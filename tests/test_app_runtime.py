@@ -72,6 +72,37 @@ class TestDownloadModel:
 
         proc.terminate.assert_called_once_with()
 
+    def test_raises_clear_error_when_server_never_ready(self, monkeypatch):
+        raw_download_model = app_module.download_model.get_raw_f()
+        proc = MagicMock(spec=subprocess.Popen)
+        client = MagicMock()
+        client.list.side_effect = RuntimeError("still starting")
+        ollama_module = SimpleNamespace(
+            Client=MagicMock(return_value=client),
+            pull=MagicMock(),
+        )
+
+        class FakeTime:
+            def __init__(self):
+                self.now = 0.0
+
+            def time(self):
+                self.now += 31.0
+                return self.now
+
+        fake_time = FakeTime()
+
+        monkeypatch.setattr(subprocess, "Popen", MagicMock(return_value=proc))
+        monkeypatch.setattr("time.time", fake_time.time)
+        monkeypatch.setattr("time.sleep", MagicMock())
+        monkeypatch.setitem(__import__("sys").modules, "ollama", ollama_module)
+
+        with pytest.raises(RuntimeError, match="did not become ready"):
+            raw_download_model("llama3.2")
+
+        ollama_module.pull.assert_not_called()
+        proc.terminate.assert_called_once_with()
+
 
 class TestApiFactory:
     def test_starts_server_waits_for_readiness_and_builds_fastapi_app(
@@ -104,3 +135,31 @@ class TestApiFactory:
         assert ollama_module.Client.call_count == 2
         sleep.assert_called_once_with(0.5)
         create_app.assert_called_once_with(ollama_host=app_module.settings.ollama_host)
+
+    def test_fails_fast_and_terminates_when_server_never_ready(self, monkeypatch):
+        raw_api = app_module.api.get_raw_f()
+        proc = MagicMock(spec=subprocess.Popen)
+        client = MagicMock()
+        client.list.side_effect = RuntimeError("not ready")
+        ollama_module = SimpleNamespace(Client=MagicMock(return_value=client))
+
+        class FakeTime:
+            def __init__(self):
+                self.now = 0.0
+
+            def time(self):
+                self.now += 31.0
+                return self.now
+
+        fake_time = FakeTime()
+        sleep = MagicMock()
+
+        monkeypatch.setattr(subprocess, "Popen", MagicMock(return_value=proc))
+        monkeypatch.setattr("time.time", fake_time.time)
+        monkeypatch.setattr("time.sleep", sleep)
+        monkeypatch.setitem(__import__("sys").modules, "ollama", ollama_module)
+
+        with pytest.raises(RuntimeError, match="did not become ready"):
+            raw_api()
+
+        proc.terminate.assert_called_once_with()

@@ -63,6 +63,21 @@ class OllamaBackend(BaseModelBackend):
                 return proc
             except Exception:
                 time.sleep(0.5)
+        # If we reach here, the server did not become ready; make sure we
+        # clean up the background process before raising.
+        try:
+            proc.terminate()
+        except Exception:
+            # Best-effort cleanup; log and continue to raise the timeout.
+            logger.warning("Failed to terminate Ollama server process on timeout.", exc_info=True)
+        else:
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                try:
+                    proc.kill()
+                except Exception:
+                    logger.warning("Failed to kill Ollama server process after timeout.", exc_info=True)
         raise RuntimeError("Ollama server did not start within 30 seconds.")
 
     # ------------------------------------------------------------------

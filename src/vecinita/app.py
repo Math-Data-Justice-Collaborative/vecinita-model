@@ -65,14 +65,7 @@ def download_model(model_name: str) -> None:
         stderr=subprocess.DEVNULL,
     )
     try:
-        # Wait for server to become ready.
-        deadline = time.time() + 30
-        while time.time() < deadline:
-            try:
-                ollama.Client().list()
-                break
-            except Exception:
-                time.sleep(0.5)
+        _wait_for_ollama_ready(timeout_seconds=30)
 
         print(f"Pulling {ollama_name} …")
         ollama.pull(ollama_name)
@@ -118,14 +111,12 @@ def api() -> object:
         stderr=subprocess.DEVNULL,
     )
 
-    # Wait until the server is accepting requests.
-    deadline = time.time() + 30
-    while time.time() < deadline:
-        try:
-            ollama.Client().list()
-            break
-        except Exception:
-            time.sleep(0.5)
+    # Wait until the server is accepting requests; fail fast if not ready.
+    try:
+        _wait_for_ollama_ready(timeout_seconds=30)
+    except RuntimeError:
+        proc.terminate()
+        raise
 
     from vecinita.api.routes import create_app
 
@@ -144,3 +135,22 @@ def _ollama_env() -> dict[str, str]:
     env = os.environ.copy()
     env["OLLAMA_MODELS"] = MODELS_PATH
     return env
+
+
+def _wait_for_ollama_ready(timeout_seconds: int = 30) -> None:
+    """Wait until Ollama responds or raise a clear timeout error."""
+    import time
+
+    import ollama
+
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        try:
+            ollama.Client().list()
+            return
+        except Exception:
+            time.sleep(0.5)
+
+    raise RuntimeError(
+        f"Ollama server did not become ready within {timeout_seconds} seconds."
+    )
