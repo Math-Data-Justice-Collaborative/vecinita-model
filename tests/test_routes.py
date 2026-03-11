@@ -1,17 +1,13 @@
 """Integration-style tests for the FastAPI route handlers.
 
 All Ollama calls are mocked so these tests run without an Ollama server.
+Shared fixtures (``mock_client``, ``http``) are defined in conftest.py.
 """
 
 from __future__ import annotations
 
 import json
-from unittest.mock import MagicMock, patch
-
-import pytest
-from fastapi.testclient import TestClient
-
-from vecinita.api.routes import create_app
+from unittest.mock import MagicMock
 
 # ---------------------------------------------------------------------------
 # Helpers to build common mock return values
@@ -38,27 +34,6 @@ def _make_stream_chunks(tokens: list[str]) -> list[MagicMock]:
         chunk.done = i == len(tokens) - 1
         chunks.append(chunk)
     return chunks
-
-
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture()
-def mock_client():
-    """Return a MagicMock that stands in for ollama.Client(...)."""
-    with patch("vecinita.api.routes._ollama") as mock_module:
-        client = MagicMock()
-        mock_module.Client.return_value = client
-        yield client
-
-
-@pytest.fixture()
-def http(mock_client) -> TestClient:
-    app = create_app(ollama_host="http://localhost:11434")
-    return TestClient(app, raise_server_exceptions=False)
-
 
 # ---------------------------------------------------------------------------
 # /health
