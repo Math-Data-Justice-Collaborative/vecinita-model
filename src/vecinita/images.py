@@ -10,7 +10,7 @@ import modal
 # Installs the Ollama server binary and the Python client library.
 ollama_image = (
     modal.Image.debian_slim(python_version="3.11")
-    .apt_install("curl")
+    .apt_install("curl", "zstd")
     .run_commands("curl -fsSL https://ollama.com/install.sh | sh")
     .pip_install(
         "fastapi[standard]>=0.115.0",
@@ -18,4 +18,5 @@ ollama_image = (
         "pydantic-settings>=2.0.0",
         "ollama>=0.4.0",
     )
+    .add_local_dir("src/vecinita", remote_path="/root/vecinita")
 )

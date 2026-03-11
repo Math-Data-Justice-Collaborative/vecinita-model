@@ -21,9 +21,9 @@ from __future__ import annotations
 
 import modal
 
-from .config import SUPPORTED_MODELS, settings
-from .images import ollama_image
-from .volumes import MODELS_PATH, models_volume
+from vecinita.config import SUPPORTED_MODELS, settings
+from vecinita.images import ollama_image
+from vecinita.volumes import MODELS_PATH, models_volume
 
 app = modal.App(settings.app_name)
 
@@ -127,7 +127,7 @@ def api() -> object:
         except Exception:
             time.sleep(0.5)
 
-    from .api.routes import create_app
+    from vecinita.api.routes import create_app
 
     return create_app(ollama_host=settings.ollama_host)
 

@@ -31,6 +31,7 @@ tests/
 
 - Python ≥ 3.11
 - A [Modal](https://modal.com) account (`pip install modal && modal setup`)
+- Docker + Docker Compose (`docker compose version`)
 - (Optional) A local [Ollama](https://ollama.com) install for local testing
 
 ---
@@ -54,7 +55,39 @@ make lint
 make test
 
 # 6. Serve locally (hot-reload, no GPU required)
-modal serve src/vecinita/app.py
+PYTHONPATH=src python3 -m modal serve src/vecinita/app.py
+```
+
+---
+
+## Run locally with Docker Compose
+
+This stack runs:
+
+- `ollama` on `localhost:11434`
+- FastAPI `api` on `localhost:8000`
+
+```bash
+# Build and start services
+make docker-up
+
+# If port 8000 is already in use:
+# API_PORT=8001 make docker-up
+
+# Pull at least one model into the Ollama container
+make docker-pull-model
+
+# Verify local API is healthy
+curl -sS http://localhost:${API_PORT:-8000}/health
+
+# Stop services
+make docker-down
+```
+
+You can tail API logs with:
+
+```bash
+make docker-logs
 ```
 
 ---
@@ -66,13 +99,13 @@ Run the following **once per model** to download weights into that volume:
 
 ```bash
 # Download Llama 3.2 (default)
-modal run src/vecinita/app.py::download_model --model-name llama3.2
+PYTHONPATH=src python3 -m modal run src/vecinita/app.py::download_model --model-name llama3.2
 
 # Download Mistral 7B
-modal run src/vecinita/app.py::download_model --model-name mistral
+PYTHONPATH=src python3 -m modal run src/vecinita/app.py::download_model --model-name mistral
 
 # Download Phi-3
-modal run src/vecinita/app.py::download_model --model-name phi3
+PYTHONPATH=src python3 -m modal run src/vecinita/app.py::download_model --model-name phi3
 ```
 
 Supported model IDs are defined in `src/vecinita/config.py`:
@@ -93,11 +126,50 @@ Supported model IDs are defined in `src/vecinita/config.py`:
 ## Deploying to Modal
 
 ```bash
-modal deploy src/vecinita/app.py
+PYTHONPATH=src python3 -m modal deploy src/vecinita/app.py
 ```
 
 After deployment Modal prints a URL like  
 `https://<your-workspace>--vecinita-model-api.modal.run`.
+
+Set this URL in an environment variable and run a health check:
+
+```bash
+export VECINITA_API_URL="https://<your-workspace>--vecinita-model-api.modal.run"
+make verify-health
+```
+
+---
+
+## Continuous deployment (GitHub Actions)
+
+This repository includes a dedicated deploy workflow in
+`.github/workflows/deploy.yml` that auto-deploys on pushes to `main`.
+
+Set these GitHub Actions repository secrets before enabling CI deploys:
+
+- `MODAL_TOKEN_ID`
+- `MODAL_TOKEN_SECRET`
+
+The workflow uses:
+
+- `actions/checkout@v5`
+- `actions/setup-python@v6`
+- `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true`
+- `pip install ".[dev]"` (non-editable install for stable CI runners)
+
+to stay compatible with the Node.js 24 runtime migration on GitHub Actions.
+
+Important:
+
+- Keep local `.env` for local development only.
+- Never commit real Modal credentials.
+- If credentials were exposed, rotate them in Modal immediately.
+
+CI quality checks run in `.github/workflows/tests.yml` and execute:
+
+- `make lint`
+- `make test`
 
 ---
 
@@ -164,8 +236,8 @@ data: {"model":"llama3.2","content":" is 4.","done":true}
 ## Adding a new model
 
 1. Add an entry to `SUPPORTED_MODELS` in `src/vecinita/config.py`.
-2. Run `modal run src/vecinita/app.py::download_model --model-name <id>` to pull weights.
-3. Redeploy with `modal deploy src/vecinita/app.py`.
+2. Run `PYTHONPATH=src python3 -m modal run src/vecinita/app.py::download_model --model-name <id>` to pull weights.
+3. Redeploy with `PYTHONPATH=src python3 -m modal deploy src/vecinita/app.py`.
 
 ---
 
