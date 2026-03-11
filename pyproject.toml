@@ -32,7 +32,13 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-addopts = "--cov=src/vecinita --cov-report=term-missing --cov-fail-under=95"
+addopts = "--cov=vecinita --cov-report=term-missing --cov-fail-under=95"
+
+[tool.coverage.paths]
+vecinita = [
+    "src/vecinita",
+    "*/site-packages/vecinita",
+]
 
 [tool.ruff]
 line-length = 88
