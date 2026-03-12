@@ -5,6 +5,12 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
+def _default_model() -> str:
+    from vecinita.config import settings
+
+    return settings.default_model
+
+
 class Message(BaseModel):
     """A single chat message."""
 
@@ -16,8 +22,8 @@ class ChatRequest(BaseModel):
     """Request body for the /chat and /stream endpoints."""
 
     model: str = Field(
-        default_factory=lambda: __import__('vecinita.config', fromlist=['settings']).settings.default_model,
-        description="Ollama model identifier"
+        default_factory=_default_model,
+        description="Ollama model identifier",
     )
     messages: list[Message] = Field(
         ..., min_length=1, description="Conversation history"

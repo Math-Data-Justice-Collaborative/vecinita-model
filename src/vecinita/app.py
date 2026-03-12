@@ -45,7 +45,6 @@ def download_model(model_name: str) -> None:
         modal run src/vecinita/app.py::download_model --model-name llama3.2
     """
     import subprocess
-    import time
 
     import ollama
 
@@ -99,9 +98,6 @@ def api() -> object:
     requests for the lifetime of the container (``scaledown_window``).
     """
     import subprocess
-    import time
-
-    import ollama
 
     # Start the Ollama server.
     proc = subprocess.Popen(  # noqa: F841  (kept to allow clean shutdown if needed)
