@@ -1,5 +1,8 @@
 # vecinita-model
 
+[![CI](https://github.com/Math-Data-Justice-Collaborative/vecinita-model/actions/workflows/tests.yml/badge.svg)](https://github.com/Math-Data-Justice-Collaborative/vecinita-model/actions/workflows/tests.yml)
+[![Deploy](https://github.com/Math-Data-Justice-Collaborative/vecinita-model/actions/workflows/deploy.yml/badge.svg)](https://github.com/Math-Data-Justice-Collaborative/vecinita-model/actions/workflows/deploy.yml)
+
 Serverless LLM model hosting on [Modal](https://modal.com).  
 Supports Ollama-compatible models (Llama 3, Mistral, Phi-3, Gemma 2, and more) with a simple REST API.
 
