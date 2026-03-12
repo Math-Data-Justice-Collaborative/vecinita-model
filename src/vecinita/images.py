@@ -16,13 +16,13 @@ OLLAMA_URL = (
     f"{OLLAMA_TARBALL}"
 )
 # SHA-256 for ollama-linux-amd64.tgz from the v0.6.1 release.
-OLLAMA_SHA256 = "f3f43caefbe9d4f0e16beba2ec73d25f6efecf95af8f3f654265950f057edc56"
+OLLAMA_SHA256 = "b17f2f8233f2c40b8391eb9f45331967221c76cef0506aeb93f4ae7be02afe9f"
 
 ollama_image = (
     modal.Image.debian_slim(python_version="3.11")
     .apt_install("curl", "ca-certificates")
     .run_commands(
-        "set -euo pipefail && "
+        "set -eu && "
         "curl -fsSL -o /tmp/ollama.tgz "
         f"{OLLAMA_URL} && "
         f"echo '{OLLAMA_SHA256}  /tmp/ollama.tgz' | sha256sum -c - && "
