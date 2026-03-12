@@ -90,7 +90,7 @@ def download_model(model_name: str) -> None:
     # gpu=modal.gpu.A10G(),
 )
 @modal.concurrent(max_inputs=10)
-@modal.asgi_app()
+@modal.asgi_app(requires_proxy_auth=True)
 def api() -> object:
     """Expose the FastAPI application as a Modal web endpoint.
 
