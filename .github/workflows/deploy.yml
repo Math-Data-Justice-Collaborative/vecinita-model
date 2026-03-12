@@ -13,8 +13,8 @@ jobs:
     name: Deploy to Modal
     runs-on: ubuntu-latest
     env:
-      MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
-      MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+      MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID != '' && secrets.MODAL_TOKEN_ID || secrets.MODAL_AUTH_KEY }}
+      MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET != '' && secrets.MODAL_TOKEN_SECRET || secrets.MODAL_AUTH_SECRET }}
 
     steps:
       - name: Check out repository
@@ -26,11 +26,23 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
+      - name: Check Modal credentials
+        id: modal-creds
+        run: |
+          if [[ -n "${MODAL_TOKEN_ID}" && -n "${MODAL_TOKEN_SECRET}" ]]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Modal credentials not configured. Set MODAL_TOKEN_ID/MODAL_TOKEN_SECRET (or MODAL_AUTH_KEY/MODAL_AUTH_SECRET) to enable deploys."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Install deploy dependencies
+        if: steps.modal-creds.outputs.configured == 'true'
         run: |
           python -m pip install --upgrade pip
           python -m pip install --upgrade setuptools wheel
           pip install ".[dev]"
 
       - name: Deploy app
+        if: steps.modal-creds.outputs.configured == 'true'
         run: PYTHONPATH=src python3 -m modal deploy src/vecinita/app.py

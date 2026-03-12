@@ -151,6 +151,14 @@ Set these GitHub Actions repository secrets before enabling CI deploys:
 - `MODAL_TOKEN_ID`
 - `MODAL_TOKEN_SECRET`
 
+The deploy workflow also supports legacy secret names:
+
+- `MODAL_AUTH_KEY`
+- `MODAL_AUTH_SECRET`
+
+If neither pair is configured, the deploy job is skipped with a notice instead
+of failing the workflow.
+
 The workflow uses:
 
 - `actions/checkout@v5`
