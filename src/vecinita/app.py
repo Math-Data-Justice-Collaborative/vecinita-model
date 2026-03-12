@@ -114,6 +114,8 @@ def api() -> object:
         proc.terminate()
         raise
 
+    _ensure_default_model_downloaded()
+
     from vecinita.api.routes import create_app
 
     return create_app(ollama_host=settings.ollama_host)
@@ -150,3 +152,28 @@ def _wait_for_ollama_ready(timeout_seconds: int = 30) -> None:
     raise RuntimeError(
         f"Ollama server did not become ready within {timeout_seconds} seconds."
     )
+
+
+def _ensure_default_model_downloaded() -> None:
+    """Pull the configured default model if it is missing in the volume."""
+    import ollama
+
+    model_id = settings.default_model
+    metadata = SUPPORTED_MODELS.get(model_id)
+    if metadata is None:
+        raise RuntimeError(
+            f"Default model '{model_id}' is not present in SUPPORTED_MODELS."
+        )
+
+    ollama_name = metadata["ollama_name"]
+    listed = ollama.Client().list()
+    installed = {m.model for m in listed.models}
+    if ollama_name in installed:
+        return
+
+    print(
+        f"Default model '{ollama_name}' not found in volume. Pulling model now..."
+    )
+    ollama.pull(ollama_name)
+    models_volume.commit()
+    print(f"Default model '{ollama_name}' is ready.")

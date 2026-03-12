@@ -118,9 +118,15 @@ class TestApiFactory:
         create_app = MagicMock(return_value="fastapi-app")
         ollama_module = SimpleNamespace(Client=MagicMock(return_value=client))
         sleep = MagicMock()
+        ensure_default_model = MagicMock()
 
         monkeypatch.setattr(subprocess, "Popen", MagicMock(return_value=proc))
         monkeypatch.setattr("time.sleep", sleep)
+        monkeypatch.setattr(
+            app_module,
+            "_ensure_default_model_downloaded",
+            ensure_default_model,
+        )
         monkeypatch.setitem(__import__("sys").modules, "ollama", ollama_module)
         monkeypatch.setitem(
             __import__("sys").modules,
@@ -134,6 +140,7 @@ class TestApiFactory:
         subprocess.Popen.assert_called_once()
         assert ollama_module.Client.call_count == 2
         sleep.assert_called_once_with(0.5)
+        ensure_default_model.assert_called_once_with()
         create_app.assert_called_once_with(ollama_host=app_module.settings.ollama_host)
 
     def test_fails_fast_and_terminates_when_server_never_ready(self, monkeypatch):
@@ -153,13 +160,63 @@ class TestApiFactory:
 
         fake_time = FakeTime()
         sleep = MagicMock()
+        ensure_default_model = MagicMock()
 
         monkeypatch.setattr(subprocess, "Popen", MagicMock(return_value=proc))
         monkeypatch.setattr("time.time", fake_time.time)
         monkeypatch.setattr("time.sleep", sleep)
+        monkeypatch.setattr(
+            app_module,
+            "_ensure_default_model_downloaded",
+            ensure_default_model,
+        )
         monkeypatch.setitem(__import__("sys").modules, "ollama", ollama_module)
 
         with pytest.raises(RuntimeError, match="did not become ready"):
             raw_api()
 
         proc.terminate.assert_called_once_with()
+
+
+class TestEnsureDefaultModelDownloaded:
+    def test_pulls_and_commits_when_default_model_missing(self, monkeypatch):
+        model_id = app_module.settings.default_model
+        ollama_name = app_module.SUPPORTED_MODELS[model_id]["ollama_name"]
+        client = MagicMock()
+        client.list.return_value = SimpleNamespace(
+            models=[SimpleNamespace(model="mistral")]
+        )
+        ollama_module = SimpleNamespace(
+            Client=MagicMock(return_value=client),
+            pull=MagicMock(),
+        )
+        commit = MagicMock()
+
+        monkeypatch.setattr(app_module, "models_volume", SimpleNamespace(commit=commit))
+        monkeypatch.setitem(__import__("sys").modules, "ollama", ollama_module)
+
+        app_module._ensure_default_model_downloaded()
+
+        ollama_module.pull.assert_called_once_with(ollama_name)
+        commit.assert_called_once_with()
+
+    def test_skips_pull_when_default_model_present(self, monkeypatch):
+        model_id = app_module.settings.default_model
+        ollama_name = app_module.SUPPORTED_MODELS[model_id]["ollama_name"]
+        client = MagicMock()
+        client.list.return_value = SimpleNamespace(
+            models=[SimpleNamespace(model=ollama_name)]
+        )
+        ollama_module = SimpleNamespace(
+            Client=MagicMock(return_value=client),
+            pull=MagicMock(),
+        )
+        commit = MagicMock()
+
+        monkeypatch.setattr(app_module, "models_volume", SimpleNamespace(commit=commit))
+        monkeypatch.setitem(__import__("sys").modules, "ollama", ollama_module)
+
+        app_module._ensure_default_model_downloaded()
+
+        ollama_module.pull.assert_not_called()
+        commit.assert_not_called()

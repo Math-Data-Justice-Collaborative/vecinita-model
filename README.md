@@ -156,10 +156,11 @@ The deploy workflow also supports legacy secret names:
 - `MODAL_AUTH_KEY`
 - `MODAL_AUTH_SECRET`
 
-If neither pair is configured, the deploy job is skipped with a notice instead
-of failing the workflow.
+If neither pair is configured, the deploy job fails fast with a clear error.
 
-The workflow uses:
+The deploy workflow can also be triggered manually via `workflow_dispatch`.
+
+The deploy workflow runs `make lint` and `make test` before deploying, and uses:
 
 - `actions/checkout@v5`
 - `actions/setup-python@v6`
