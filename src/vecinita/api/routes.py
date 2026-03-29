@@ -12,7 +12,7 @@ import json
 import logging
 
 import ollama as _ollama
-from fastapi import FastAPI, HTTPException
+from fastapi import APIRouter, FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 
 from ..config import settings
@@ -44,8 +44,11 @@ def create_app(ollama_host: str = settings.ollama_host) -> FastAPI:  # noqa: B00
         version="0.1.0",
     )
 
+    # Create a router for /api/ routes (Ollama compatibility)
+    api_router = APIRouter(prefix="/api", tags=["Inference"])
+
     # ------------------------------------------------------------------
-    # /health
+    # /health and /api/health
     # ------------------------------------------------------------------
 
     @app.get("/health", response_model=HealthResponse, tags=["Meta"])
@@ -59,8 +62,13 @@ def create_app(ollama_host: str = settings.ollama_host) -> FastAPI:  # noqa: B00
             logger.warning("Health check failed: %s", exc)
             return HealthResponse(status="error", models=[])
 
+    @app.get("/api/health", response_model=HealthResponse, tags=["Meta"])
+    async def api_health() -> HealthResponse:
+        """Return service status and the list of locally available models (Ollama API format)."""
+        return await health()
+
     # ------------------------------------------------------------------
-    # /chat
+    # /chat and /api/chat
     # ------------------------------------------------------------------
 
     @app.post("/chat", response_model=ChatResponse, tags=["Inference"])
@@ -89,8 +97,13 @@ def create_app(ollama_host: str = settings.ollama_host) -> FastAPI:  # noqa: B00
                 detail="An error occurred processing your request",
             ) from exc
 
+    @app.post("/api/chat", response_model=ChatResponse, tags=["Inference"])
+    async def api_chat(request: ChatRequest) -> ChatResponse:
+        """Send a conversation and receive a complete response (Ollama API format)."""
+        return await chat(request)
+
     # ------------------------------------------------------------------
-    # /stream
+    # /stream and /api/stream
     # ------------------------------------------------------------------
 
     @app.post("/stream", tags=["Inference"])
@@ -123,6 +136,11 @@ def create_app(ollama_host: str = settings.ollama_host) -> FastAPI:  # noqa: B00
                 yield f"data: {error_payload}\n\n"
 
         return StreamingResponse(generate(), media_type="text/event-stream")
+
+    @app.post("/api/stream", tags=["Inference"])
+    async def api_stream(request: ChatRequest) -> StreamingResponse:
+        """Stream response tokens as Server-Sent Events (Ollama API format)."""
+        return await stream(request)
 
     return app
 
