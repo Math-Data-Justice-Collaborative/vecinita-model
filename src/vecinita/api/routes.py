@@ -12,7 +12,7 @@ import json
 import logging
 
 import ollama as _ollama
-from fastapi import APIRouter, FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 
 from ..config import settings
@@ -44,9 +44,6 @@ def create_app(ollama_host: str = settings.ollama_host) -> FastAPI:  # noqa: B00
         version="0.1.0",
     )
 
-    # Create a router for /api/ routes (Ollama compatibility)
-    api_router = APIRouter(prefix="/api", tags=["Inference"])
-
     # ------------------------------------------------------------------
     # /health and /api/health
     # ------------------------------------------------------------------
@@ -64,7 +61,7 @@ def create_app(ollama_host: str = settings.ollama_host) -> FastAPI:  # noqa: B00
 
     @app.get("/api/health", response_model=HealthResponse, tags=["Meta"])
     async def api_health() -> HealthResponse:
-        """Return service status and the list of locally available models (Ollama API format)."""
+        """Return service status and locally available models in Ollama format."""
         return await health()
 
     # ------------------------------------------------------------------
@@ -99,7 +96,7 @@ def create_app(ollama_host: str = settings.ollama_host) -> FastAPI:  # noqa: B00
 
     @app.post("/api/chat", response_model=ChatResponse, tags=["Inference"])
     async def api_chat(request: ChatRequest) -> ChatResponse:
-        """Send a conversation and receive a complete response (Ollama API format)."""
+        """Send a conversation and receive a complete response in Ollama format."""
         return await chat(request)
 
     # ------------------------------------------------------------------
