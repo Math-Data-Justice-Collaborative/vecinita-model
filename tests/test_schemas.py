@@ -10,6 +10,7 @@ from vecinita.api.schemas import (
     Message,
     StreamChunk,
 )
+from vecinita.config import settings
 
 # ---------------------------------------------------------------------------
 # Message
@@ -39,7 +40,7 @@ class TestMessage:
 class TestChatRequest:
     def test_defaults(self):
         req = ChatRequest(messages=[Message(role="user", content="hi")])
-        assert req.model == "llama3.2"
+        assert req.model == settings.default_model
         assert req.temperature == 0.7
         assert req.max_tokens is None
 
