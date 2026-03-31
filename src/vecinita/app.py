@@ -8,7 +8,7 @@ Preloading model weights
 ------------------------
 Run once to pull model weights into the persistent volume:
 
-    modal run src/vecinita/app.py::download_model --model-name llama3.2
+    modal run src/vecinita/app.py::download_model --model-name llama3.1:8b
 
 Available model IDs are listed in ``config.SUPPORTED_MODELS``.
 
@@ -42,7 +42,7 @@ def download_model(model_name: str) -> None:
 
     This function should be run once (or whenever you add a new model):
 
-        modal run src/vecinita/app.py::download_model --model-name llama3.2
+        modal run src/vecinita/app.py::download_model --model-name llama3.1:8b
     """
     import subprocess
 
@@ -86,8 +86,7 @@ def download_model(model_name: str) -> None:
     volumes={MODELS_PATH: models_volume},
     scaledown_window=settings.scaledown_window,
     timeout=settings.timeout,
-    # Remove or change the GPU spec to match your Modal plan / model size.
-    # gpu=modal.gpu.A10G(),
+    gpu=modal.gpu.A10G(),
 )
 @modal.concurrent(max_inputs=10)
 @modal.asgi_app(requires_proxy_auth=True)

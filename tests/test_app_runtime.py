@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -20,6 +21,17 @@ class TestOllamaEnv:
 
         assert env["OLLAMA_MODELS"] == MODELS_PATH
         assert os.environ.get("OLLAMA_MODELS") == original
+
+
+class TestDeploymentDefaults:
+    def test_default_model_is_llama31_8b(self):
+        config_source = Path(__file__).resolve().parents[1] / "src/vecinita/config.py"
+        content = config_source.read_text(encoding="utf-8")
+        assert 'default_model: str = "llama3.1:8b"' in content
+
+    def test_api_function_uses_gpu_acceleration(self):
+        app_source = Path(app_module.__file__).read_text(encoding="utf-8")
+        assert "gpu=modal.gpu.A10G()" in app_source
 
 
 class TestDownloadModel:

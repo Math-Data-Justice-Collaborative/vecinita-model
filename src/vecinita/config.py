@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     app_name: str = "vecinita-model"
-    default_model: str = "llama3.2"
+    default_model: str = "llama3.1:8b"
     models_path: str = "/models"
     ollama_host: str = "http://localhost:11434"
     # Seconds to keep a container alive after last request
