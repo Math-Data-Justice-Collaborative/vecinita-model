@@ -101,7 +101,10 @@ Model weights are stored in a Modal persistent volume (`vecinita-models`).
 Run the following **once per model** to download weights into that volume:
 
 ```bash
-# Download Llama 3.2 (default)
+# Download default model from config (currently llama3.1:8b)
+PYTHONPATH=src python3 -m modal run src/vecinita/app.py::download_default_model
+
+# Download Llama 3.2 explicitly
 PYTHONPATH=src python3 -m modal run src/vecinita/app.py::download_model --model-name llama3.2
 
 # Download Mistral 7B
@@ -163,7 +166,8 @@ If neither pair is configured, the deploy job fails fast with a clear error.
 
 The deploy workflow can also be triggered manually via `workflow_dispatch`.
 
-The deploy workflow runs `make lint` and `make test` before deploying, and uses:
+The deploy workflow runs `make lint` and `make test` before deploying, then warms
+the configured default model into the Modal volume, and uses:
 
 - `actions/checkout@v5`
 - `actions/setup-python@v6`

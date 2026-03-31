@@ -44,36 +44,23 @@ def download_model(model_name: str) -> None:
 
         modal run src/vecinita/app.py::download_model --model-name llama3.1:8b
     """
-    import subprocess
-
-    import ollama
-
     if model_name not in SUPPORTED_MODELS:
         supported = ", ".join(SUPPORTED_MODELS)
         raise ValueError(
             f"Unknown model '{model_name}'. Supported models: {supported}"
         )
 
-    ollama_name = SUPPORTED_MODELS[model_name]["ollama_name"]
+    _download_model_if_missing(model_name)
 
-    # Start the Ollama daemon so we can issue pull commands through it.
-    proc = subprocess.Popen(
-        ["ollama", "serve"],
-        env=_ollama_env(),
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    try:
-        _wait_for_ollama_ready(timeout_seconds=30)
 
-        print(f"Pulling {ollama_name} …")
-        ollama.pull(ollama_name)
-
-        # Persist changes to the volume.
-        models_volume.commit()
-        print(f"Successfully downloaded '{ollama_name}' into the models volume.")
-    finally:
-        proc.terminate()
+@app.function(
+    image=ollama_image,
+    volumes={MODELS_PATH: models_volume},
+    timeout=3600,
+)
+def download_default_model() -> None:
+    """Ensure the configured default model exists in the shared volume."""
+    _download_model_if_missing(settings.default_model)
 
 
 # ---------------------------------------------------------------------------
@@ -176,3 +163,35 @@ def _ensure_default_model_downloaded() -> None:
     ollama.pull(ollama_name)
     models_volume.commit()
     print(f"Default model '{ollama_name}' is ready.")
+
+
+def _download_model_if_missing(model_name: str) -> None:
+    """Pull *model_name* into the shared volume only when missing."""
+    import subprocess
+
+    import ollama
+
+    ollama_name = SUPPORTED_MODELS[model_name]["ollama_name"]
+
+    # Start the Ollama daemon so we can issue pull/list commands through it.
+    proc = subprocess.Popen(
+        ["ollama", "serve"],
+        env=_ollama_env(),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        _wait_for_ollama_ready(timeout_seconds=30)
+        installed = {m.model for m in ollama.Client().list().models}
+        if ollama_name in installed:
+            print(f"Model '{ollama_name}' already present in volume; skipping pull.")
+            return
+
+        print(f"Pulling {ollama_name} ...")
+        ollama.pull(ollama_name)
+
+        # Persist changes to the volume.
+        models_volume.commit()
+        print(f"Successfully downloaded '{ollama_name}' into the models volume.")
+    finally:
+        proc.terminate()

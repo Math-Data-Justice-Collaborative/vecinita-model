@@ -67,6 +67,18 @@ class TestDownloadModel:
         proc.terminate.assert_called_once_with()
         sleep.assert_not_called()
 
+    def test_download_default_model_function_exists_in_source(self):
+        app_source_path = Path(__file__).resolve().parents[1] / "src/vecinita/app.py"
+        app_source = app_source_path.read_text(encoding="utf-8")
+        assert "def download_default_model()" in app_source
+        assert "_download_model_if_missing(settings.default_model)" in app_source
+
+    def test_download_helper_skips_pull_when_already_present(self):
+        app_source_path = Path(__file__).resolve().parents[1] / "src/vecinita/app.py"
+        app_source = app_source_path.read_text(encoding="utf-8")
+        assert "if ollama_name in installed:" in app_source
+        assert "skipping pull" in app_source
+
     def test_terminates_server_when_pull_fails(self, monkeypatch):
         raw_download_model = app_module.download_model.get_raw_f()
         proc = MagicMock(spec=subprocess.Popen)
