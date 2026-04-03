@@ -73,7 +73,6 @@ def download_default_model() -> None:
     volumes={MODELS_PATH: models_volume},
     scaledown_window=settings.scaledown_window,
     timeout=settings.timeout,
-    gpu="A10G",
 )
 @modal.concurrent(max_inputs=10)
 @modal.asgi_app(requires_proxy_auth=False)
