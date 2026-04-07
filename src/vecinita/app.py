@@ -75,7 +75,7 @@ def download_default_model() -> None:
     timeout=settings.timeout,
 )
 @modal.concurrent(max_inputs=10)
-@modal.asgi_app(requires_proxy_auth=False)
+@modal.asgi_app()
 def api() -> object:
     """Expose the FastAPI application as a Modal web endpoint.
 
