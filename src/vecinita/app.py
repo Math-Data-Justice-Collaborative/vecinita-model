@@ -71,6 +71,7 @@ def download_default_model() -> None:
 @app.function(
     image=ollama_image,
     volumes={MODELS_PATH: models_volume},
+    gpu="A10G",
     scaledown_window=settings.scaledown_window,
     timeout=settings.timeout,
 )
