@@ -30,9 +30,10 @@ class TestDeploymentDefaults:
         assert 'default_model: str = "llama3.1:8b"' in content
 
     def test_api_function_uses_gpu_acceleration(self):
-        app_source_path = Path(__file__).resolve().parents[1] / "src/vecinita/app.py"
-        app_source = app_source_path.read_text(encoding="utf-8")
-        assert 'gpu="A10G"' in app_source
+        # Assert on Modal's resolved spec (not a raw source substring) so refactors
+        # and quote style cannot false-fail CI while the deployment still uses A10G.
+        gpus = app_module.api.spec.gpus
+        assert gpus == "A10G", f"API function should request A10G, got {gpus!r}"
 
 
 class TestDownloadModel:
