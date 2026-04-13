@@ -33,6 +33,11 @@ where = ["src"]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 addopts = "--cov=vecinita --cov-report=term-missing --cov-fail-under=95"
+filterwarnings = [
+    "ignore::requests.exceptions.RequestsDependencyWarning",
+    "ignore:Passing 'msg' argument to Task.cancel\\(\\) is deprecated since Python 3\\.11.*:DeprecationWarning:anyio\\._backends\\._asyncio",
+    "ignore:Passing 'msg' argument to Future.cancel\\(\\) is deprecated since Python 3\\.11.*:DeprecationWarning:anyio\\._backends\\._asyncio",
+]
 
 [tool.coverage.paths]
 vecinita = [

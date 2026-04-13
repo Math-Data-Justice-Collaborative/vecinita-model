@@ -280,6 +280,9 @@ make test
 
 `pytest` is configured to collect coverage for `src/vecinita` and fail below 95%.
 Tests mock the Ollama client so no running server or GPU is needed.
+The test target also sets `PYTHONWARNINGS=ignore:::requests` and `pytest`
+filters known `anyio` Python 3.11 deprecation warnings so logs stay focused on
+real regressions.
 
 ## Running lint
 

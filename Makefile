@@ -1,10 +1,12 @@
 .PHONY: lint test docker-up docker-down docker-logs docker-pull-model deploy verify-health
 
+PYTHONWARNINGS ?= ignore:::requests
+
 lint:
 	ruff check .
 
 test:
-	pytest
+	PYTHONWARNINGS="$(PYTHONWARNINGS)" pytest
 
 docker-up:
 	docker compose up --build -d
