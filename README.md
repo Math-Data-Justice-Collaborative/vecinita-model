@@ -4,7 +4,7 @@
 [![Deploy](https://github.com/Math-Data-Justice-Collaborative/vecinita-model/actions/workflows/deploy.yml/badge.svg)](https://github.com/Math-Data-Justice-Collaborative/vecinita-model/actions/workflows/deploy.yml)
 
 Serverless LLM model hosting on [Modal](https://modal.com).  
-Supports Ollama-compatible models (Llama 3, Mistral, Phi-3, Gemma 2, and more) with a simple REST API.
+Supports Ollama-compatible models (Gemma 3 default, Llama 3, Mistral, Phi-3, Gemma 2, and more) with a simple REST API.
 
 ---
 
@@ -101,7 +101,7 @@ Model weights are stored in a Modal persistent volume (`vecinita-models`).
 Run the following **once per model** to download weights into that volume:
 
 ```bash
-# Download default model from config (currently llama3.1:8b)
+# Download default model from config (currently gemma3)
 PYTHONPATH=src python3 -m modal run src/vecinita/app.py::download_default_model
 
 # Download Llama 3.2 explicitly
@@ -118,10 +118,11 @@ Supported model IDs are defined in `src/vecinita/config.py`:
 
 | Model ID       | Description                  |
 |----------------|------------------------------|
-| `llama3.2`     | Meta Llama 3.2 (default)     |
+| `gemma3`       | Google Gemma 3 (default)     |
+| `llama3.2`     | Meta Llama 3.2               |
 | `llama3.2:1b`  | Meta Llama 3.2 1B (small)    |
 | `llama3.1`     | Meta Llama 3.1               |
-| `llama3.1:8b`  | Meta Llama 3.1 8B            |
+| `llama3.1:8b`  | Meta Llama 3.1 8B (optional; not the repo default) |
 | `mistral`      | Mistral 7B                   |
 | `phi3`         | Microsoft Phi-3              |
 | `gemma2`       | Google Gemma 2               |
@@ -198,7 +199,7 @@ Returns service status and the list of models cached in the volume.
 ```json
 {
   "status": "ok",
-  "models": ["llama3.2", "mistral"]
+  "models": ["gemma3", "mistral"]
 }
 ```
 
@@ -212,7 +213,7 @@ Send a conversation and receive a **complete** response.
 
 ```json
 {
-  "model": "llama3.2",
+  "model": "gemma3",
   "messages": [
     {"role": "user", "content": "What is 2 + 2?"}
   ],
@@ -225,7 +226,7 @@ Send a conversation and receive a **complete** response.
 
 ```json
 {
-  "model": "llama3.2",
+  "model": "gemma3",
   "message": {"role": "assistant", "content": "4"},
   "done": true
 }
@@ -242,9 +243,9 @@ Stream response tokens as [Server-Sent Events](https://developer.mozilla.org/en-
 **Event stream** (each line is one SSE event):
 
 ```
-data: {"model":"llama3.2","content":"The","done":false}
-data: {"model":"llama3.2","content":" answer","done":false}
-data: {"model":"llama3.2","content":" is 4.","done":true}
+data: {"model":"gemma3","content":"The","done":false}
+data: {"model":"gemma3","content":" answer","done":false}
+data: {"model":"gemma3","content":" is 4.","done":true}
 ```
 
 ---
@@ -257,18 +258,12 @@ data: {"model":"llama3.2","content":" is 4.","done":true}
 
 ---
 
-## GPU configuration
+## CPU and GPU configuration
 
-By default the API function runs on CPU (suitable for small models and
-development).  To enable GPU inference uncomment and adjust the `gpu=` line
-in `src/vecinita/app.py`:
-
-```python
-@app.function(
-    ...
-    gpu=modal.gpu.A10G(),   # or T4, A100, H100, …
-)
-```
+The API function uses **CPU inference** by default (`cpu=4.0`, no `gpu=` in
+`src/vecinita/app.py`). For larger models or faster throughput, add a `gpu=`
+argument (for example `gpu="A10G"` or `gpu=modal.gpu.A10G()`) and remove or
+lower the `cpu=` allocation as appropriate.
 
 ---
 

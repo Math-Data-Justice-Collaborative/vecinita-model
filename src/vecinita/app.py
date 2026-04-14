@@ -8,7 +8,7 @@ Preloading model weights
 ------------------------
 Run once to pull model weights into the persistent volume:
 
-    modal run src/vecinita/app.py::download_model --model-name llama3.1:8b
+    modal run src/vecinita/app.py::download_model --model-name gemma3
 
 Available model IDs are listed in ``config.SUPPORTED_MODELS``.
 
@@ -42,7 +42,7 @@ def download_model(model_name: str) -> None:
 
     This function should be run once (or whenever you add a new model):
 
-        modal run src/vecinita/app.py::download_model --model-name llama3.1:8b
+        modal run src/vecinita/app.py::download_model --model-name gemma3
     """
     if model_name not in SUPPORTED_MODELS:
         supported = ", ".join(SUPPORTED_MODELS)
@@ -71,7 +71,7 @@ def download_default_model() -> None:
 @app.function(
     image=ollama_image,
     volumes={MODELS_PATH: models_volume},
-    gpu="A10G",
+    cpu=4.0,
     scaledown_window=settings.scaledown_window,
     timeout=settings.timeout,
 )
@@ -80,8 +80,8 @@ def download_default_model() -> None:
 def api() -> object:
     """Expose the FastAPI application as a Modal web endpoint.
 
-    The Ollama daemon is started once per container and reused across
-    requests for the lifetime of the container (``scaledown_window``).
+    Runs on CPU (no GPU). The Ollama daemon is started once per container and
+    reused across requests for the lifetime of the container (``scaledown_window``).
     """
     import subprocess
 
@@ -105,6 +105,51 @@ def api() -> object:
     from vecinita.api.routes import create_app
 
     return create_app(ollama_host=settings.ollama_host)
+
+
+@app.function(
+    image=ollama_image,
+    volumes={MODELS_PATH: models_volume},
+    cpu=4.0,
+    scaledown_window=settings.scaledown_window,
+    timeout=settings.timeout,
+)
+def chat_completion(
+    model: str,
+    messages: list[dict[str, str]],
+    temperature: float = 0.0,
+) -> dict:
+    """Function-style chat completion for non-HTTP Modal invocation."""
+    return _chat_completion_impl(model=model, messages=messages, temperature=temperature)  # pragma: no cover
+
+
+def _chat_completion_impl(
+    model: str,
+    messages: list[dict[str, str]],
+    temperature: float = 0.0,
+) -> dict:
+    """Chat-completion implementation shared by modal wrapper and unit tests."""
+    import subprocess
+
+    import ollama
+
+    proc = subprocess.Popen(
+        ["ollama", "serve"],
+        env=_ollama_env(),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        _wait_for_ollama_ready(timeout_seconds=30)
+        _ensure_default_model_downloaded()
+        response = ollama.Client(host=settings.ollama_host).chat(
+            model=model,
+            messages=messages,
+            options={"temperature": temperature},
+        )
+        return dict(response)
+    finally:
+        proc.terminate()
 
 
 # ---------------------------------------------------------------------------

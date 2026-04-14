@@ -24,16 +24,22 @@ class TestOllamaEnv:
 
 
 class TestDeploymentDefaults:
-    def test_default_model_is_llama31_8b(self):
+    def test_default_model_is_gemma3(self):
         config_source = Path(__file__).resolve().parents[1] / "src/vecinita/config.py"
         content = config_source.read_text(encoding="utf-8")
-        assert 'default_model: str = "llama3.1:8b"' in content
+        assert 'default_model: str = "gemma3"' in content
 
-    def test_api_function_uses_gpu_acceleration(self):
+    def test_api_function_uses_cpu_only(self):
         # Assert on Modal's resolved spec (not a raw source substring) so refactors
-        # and quote style cannot false-fail CI while the deployment still uses A10G.
+        # and quote style cannot false-fail CI while the deployment stays CPU-only.
         gpus = app_module.api.spec.gpus
-        assert gpus == "A10G", f"API function should request A10G, got {gpus!r}"
+        assert not gpus, (
+            f"API function should not request a GPU (CPU inference), got {gpus!r}"
+        )
+        cpu = app_module.api.spec.cpu
+        assert cpu is not None and cpu >= 4.0, (
+            f"API function should allocate CPU cores, got {cpu!r}"
+        )
 
 
 class TestDownloadModel:
