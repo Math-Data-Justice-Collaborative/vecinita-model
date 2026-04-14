@@ -44,7 +44,67 @@ class ChatRequest(BaseModel):
                     ],
                     "temperature": 0.7,
                     "max_tokens": 256,
-                }
+                },
+                {
+                    "model": "llama3.1:8b",
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": "You answer in Spanish using short paragraphs.",
+                        },
+                        {
+                            "role": "user",
+                            "content": "¿Dónde pido vouchers escolares?",
+                        },
+                    ],
+                    "temperature": 0.3,
+                    "max_tokens": 512,
+                },
+                {
+                    "model": "llama3.1:8b",
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": "List three documents for WIC enrollment.",
+                        },
+                        {
+                            "role": "assistant",
+                            "content": (
+                                "Typically ID, proof of income, and proof of residence."
+                            ),
+                        },
+                        {
+                            "role": "user",
+                            "content": "Which IDs if I have no passport?",
+                        },
+                    ],
+                    "temperature": 0.5,
+                    "max_tokens": 400,
+                },
+                {
+                    "model": "llama3.1:8b",
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": (
+                                "Explain cooling centers vs libraries in heat waves."
+                            ),
+                        }
+                    ],
+                    "temperature": 0.2,
+                    "max_tokens": 320,
+                },
+                {
+                    "model": "llama3.1:8b",
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": "Draft a polite rent payment plan email.",
+                        }
+                    ],
+                    "temperature": 0.9,
+                    "max_tokens": 600,
+                },
             ]
         }
     )
@@ -79,21 +139,92 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     """Response body for the /chat endpoint."""
 
-    model: str
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "model": "llama3.1:8b",
+                    "message": {
+                        "role": "assistant",
+                        "content": "Here is a concise summary of tenant rights.",
+                    },
+                    "done": True,
+                },
+                {
+                    "model": "llama3.1:8b",
+                    "message": {
+                        "role": "assistant",
+                        "content": "El horario de la clínica es lunes a viernes.",
+                    },
+                    "done": True,
+                },
+                {
+                    "model": "llama3.1:8b",
+                    "message": {
+                        "role": "assistant",
+                        "content": "Bring ID, proof of income, and proof of address.",
+                    },
+                    "done": True,
+                },
+                {
+                    "model": "llama3.1:8b",
+                    "message": {
+                        "role": "assistant",
+                        "content": "Cooling centers include Main Library this weekend.",
+                    },
+                    "done": True,
+                },
+                {
+                    "model": "llama3.1:8b",
+                    "message": {
+                        "role": "assistant",
+                        "content": "Bus 14 runs every 15 minutes at peak.",
+                    },
+                    "done": True,
+                },
+            ]
+        }
+    )
+
+    model: str = Field(..., examples=["llama3.1:8b"])
     message: Message
-    done: bool = True
+    done: bool = Field(default=True, examples=[True])
 
 
 class StreamChunk(BaseModel):
     """A single chunk yielded by the /stream endpoint (Server-Sent Events)."""
 
-    model: str
-    content: str
-    done: bool
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {"model": "llama3.1:8b", "content": "Partial ", "done": False},
+                {"model": "llama3.1:8b", "content": "", "done": True},
+                {"model": "llama3.1:8b", "content": "Here is ", "done": False},
+                {"model": "llama3.1:8b", "content": "the answer.", "done": False},
+                {"model": "llama3.1:8b", "content": "\n", "done": True},
+            ]
+        }
+    )
+
+    model: str = Field(..., examples=["llama3.1:8b"])
+    content: str = Field(..., examples=["Streaming token text…"])
+    done: bool = Field(..., examples=[False])
 
 
 class HealthResponse(BaseModel):
     """Runtime health and model discovery for load balancers and humans."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {"status": "ok", "models": ["llama3.1:8b", "llama3.2:latest"]},
+                {"status": "error", "models": []},
+                {"status": "ok", "models": ["mistral", "phi3:mini"]},
+                {"status": "ok", "models": ["llama3.1:8b"]},
+                {"status": "ok", "models": ["custom:latest"]},
+            ]
+        }
+    )
 
     status: Literal["ok", "error"] = Field(
         ...,
