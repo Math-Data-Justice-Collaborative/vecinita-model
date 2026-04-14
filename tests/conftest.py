@@ -1,5 +1,10 @@
 """Shared pytest fixtures."""
 
+import os
+
+# ``api`` is omitted when ``VECINITA_MODAL_INCLUDE_WEB_ENDPOINTS=0`` at import time.
+os.environ.setdefault("VECINITA_MODAL_INCLUDE_WEB_ENDPOINTS", "1")
+
 from unittest.mock import MagicMock, patch
 
 import pytest

@@ -21,7 +21,7 @@ docker-pull-model:
 	docker compose exec ollama ollama pull gemma3
 
 deploy:
-	PYTHONPATH=src python3 -m modal deploy src/vecinita/app.py
+	PYTHONPATH=src python3 -m modal deploy main.py
 
 verify-health:
 	curl -fsS "$$VECINITA_API_URL/health"

@@ -1,16 +1,26 @@
 """Main Modal application.
 
-Deployment
-----------
+Deployment (persisted app; invoke from outside Modal)
+-----------------------------------------------------
     modal deploy src/vecinita/app.py
 
-Preloading model weights
-------------------------
-Run once to pull model weights into the persistent volume:
+After deploy, Modal functions can be triggered from Python without HTTP, e.g.
+``modal.Function.from_name(app_name, "chat_completion").remote(...)``, which is how
+the vecinita gateway can call ``chat_completion`` when ``MODAL_FUNCTION_INVOCATION`` is
+set (see Modal docs *Trigger deployed functions* / ``Function.from_name``).
+
+Ephemeral runs (``modal run`` / ``app.run``)
+--------------------------------------------
+Modal's *Apps, Functions, and entrypoints* guide: use ``with app.run():`` and
+``some_function.remote(...)`` from a ``@app.local_entrypoint()`` or
+``modal run path::fn``. Here, call a registered function directly, e.g.::
 
     modal run src/vecinita/app.py::download_model --model-name gemma3
 
-Available model IDs are listed in ``config.SUPPORTED_MODELS``.
+Preloading model weights
+------------------------
+Run once to pull model weights into the persistent volume; model IDs are in
+``config.SUPPORTED_MODELS``.
 
 Local development
 -----------------
@@ -19,11 +29,20 @@ Local development
 
 from __future__ import annotations
 
+import os
+
 import modal
 
 from vecinita.config import SUPPORTED_MODELS, settings
 from vecinita.images import ollama_image
 from vecinita.volumes import MODELS_PATH, models_volume
+
+
+def _include_modal_web_endpoints() -> bool:
+    """Falsey env skips HTTP ``api`` ASGI (Modal function deploy only)."""
+    v = os.environ.get("VECINITA_MODAL_INCLUDE_WEB_ENDPOINTS", "1").strip().lower()
+    return v in {"1", "true", "yes", "on"}
+
 
 app = modal.App(settings.app_name)
 
@@ -46,9 +65,7 @@ def download_model(model_name: str) -> None:
     """
     if model_name not in SUPPORTED_MODELS:
         supported = ", ".join(SUPPORTED_MODELS)
-        raise ValueError(
-            f"Unknown model '{model_name}'. Supported models: {supported}"
-        )
+        raise ValueError(f"Unknown model '{model_name}'. Supported models: {supported}")
 
     _download_model_if_missing(model_name)
 
@@ -64,47 +81,48 @@ def download_default_model() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Web API endpoint
+# Web API endpoint (optional; omit with VECINITA_MODAL_INCLUDE_WEB_ENDPOINTS=0)
 # ---------------------------------------------------------------------------
 
+if _include_modal_web_endpoints():
 
-@app.function(
-    image=ollama_image,
-    volumes={MODELS_PATH: models_volume},
-    cpu=4.0,
-    scaledown_window=settings.scaledown_window,
-    timeout=settings.timeout,
-)
-@modal.concurrent(max_inputs=10)
-@modal.asgi_app()
-def api() -> object:
-    """Expose the FastAPI application as a Modal web endpoint.
-
-    Runs on CPU (no GPU). The Ollama daemon is started once per container and
-    reused across requests for the lifetime of the container (``scaledown_window``).
-    """
-    import subprocess
-
-    # Start the Ollama server.
-    proc = subprocess.Popen(  # noqa: F841  (kept to allow clean shutdown if needed)
-        ["ollama", "serve"],
-        env=_ollama_env(),
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+    @app.function(
+        image=ollama_image,
+        volumes={MODELS_PATH: models_volume},
+        cpu=4.0,
+        scaledown_window=settings.scaledown_window,
+        timeout=settings.timeout,
     )
+    @modal.concurrent(max_inputs=10)
+    @modal.asgi_app()
+    def api() -> object:
+        """Expose the FastAPI application as a Modal web endpoint.
 
-    # Wait until the server is accepting requests; fail fast if not ready.
-    try:
-        _wait_for_ollama_ready(timeout_seconds=30)
-    except RuntimeError:
-        proc.terminate()
-        raise
+        Runs on CPU (no GPU). The Ollama daemon is started once per container and
+        reused across requests for the lifetime of the container (``scaledown_window``).
+        """
+        import subprocess
 
-    _ensure_default_model_downloaded()
+        # Start the Ollama server.
+        proc = subprocess.Popen(  # noqa: F841  (kept to allow clean shutdown if needed)
+            ["ollama", "serve"],
+            env=_ollama_env(),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
 
-    from vecinita.api.routes import create_app
+        # Wait until the server is accepting requests; fail fast if not ready.
+        try:
+            _wait_for_ollama_ready(timeout_seconds=30)
+        except RuntimeError:
+            proc.terminate()
+            raise
 
-    return create_app(ollama_host=settings.ollama_host)
+        _ensure_default_model_downloaded()
+
+        from vecinita.api.routes import create_app
+
+        return create_app(ollama_host=settings.ollama_host)
 
 
 @app.function(
@@ -206,9 +224,7 @@ def _ensure_default_model_downloaded() -> None:
     if ollama_name in installed:
         return
 
-    print(
-        f"Default model '{ollama_name}' not found in volume. Pulling model now..."
-    )
+    print(f"Default model '{ollama_name}' not found in volume. Pulling model now...")
     ollama.pull(ollama_name)
     models_volume.commit()
     print(f"Default model '{ollama_name}' is ready.")
