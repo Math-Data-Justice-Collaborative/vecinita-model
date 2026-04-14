@@ -24,16 +24,22 @@ class TestOllamaEnv:
 
 
 class TestDeploymentDefaults:
-    def test_default_model_is_llama31_8b(self):
+    def test_default_model_is_gemma3(self):
         config_source = Path(__file__).resolve().parents[1] / "src/vecinita/config.py"
         content = config_source.read_text(encoding="utf-8")
-        assert 'default_model: str = "llama3.1:8b"' in content
+        assert 'default_model: str = "gemma3"' in content
 
-    def test_api_function_uses_gpu_acceleration(self):
+    def test_api_function_uses_cpu_only(self):
         # Assert on Modal's resolved spec (not a raw source substring) so refactors
-        # and quote style cannot false-fail CI while the deployment still uses A10G.
+        # and quote style cannot false-fail CI while the deployment stays CPU-only.
         gpus = app_module.api.spec.gpus
-        assert gpus == "A10G", f"API function should request A10G, got {gpus!r}"
+        assert not gpus, (
+            f"API function should not request a GPU (CPU inference), got {gpus!r}"
+        )
+        cpu = app_module.api.spec.cpu
+        assert cpu is not None and cpu >= 4.0, (
+            f"API function should allocate CPU cores, got {cpu!r}"
+        )
 
 
 class TestDownloadModel:
@@ -246,3 +252,60 @@ class TestEnsureDefaultModelDownloaded:
 
         ollama_module.pull.assert_not_called()
         commit.assert_not_called()
+
+    def test_raises_when_default_model_not_in_registry(self, monkeypatch):
+        monkeypatch.setattr(app_module.settings, "default_model", "missing-model")
+        with pytest.raises(RuntimeError, match="not present in SUPPORTED_MODELS"):
+            app_module._ensure_default_model_downloaded()
+
+
+class TestDownloadModelIfMissing:
+    def test_skips_pull_when_model_already_installed(self, monkeypatch):
+        proc = MagicMock(spec=subprocess.Popen)
+        model_name = "gemma3"
+        ollama_name = app_module.SUPPORTED_MODELS[model_name]["ollama_name"]
+        client = MagicMock()
+        client.list.return_value = SimpleNamespace(
+            models=[SimpleNamespace(model=ollama_name)]
+        )
+        ollama_module = SimpleNamespace(
+            Client=MagicMock(return_value=client),
+            pull=MagicMock(),
+        )
+        monkeypatch.setattr(subprocess, "Popen", MagicMock(return_value=proc))
+        monkeypatch.setitem(__import__("sys").modules, "ollama", ollama_module)
+
+        app_module._download_model_if_missing(model_name)
+
+        ollama_module.pull.assert_not_called()
+        proc.terminate.assert_called_once_with()
+
+
+class TestChatCompletionImplementation:
+    def test_chat_completion_impl_returns_chat_payload(self, monkeypatch):
+        proc = MagicMock(spec=subprocess.Popen)
+        chat_payload = {"message": {"content": "hello"}}
+        client = MagicMock()
+        client.chat.return_value = chat_payload
+        ollama_module = SimpleNamespace(Client=MagicMock(return_value=client))
+        monkeypatch.setattr(subprocess, "Popen", MagicMock(return_value=proc))
+        monkeypatch.setitem(__import__("sys").modules, "ollama", ollama_module)
+        monkeypatch.setattr(
+            app_module,
+            "_wait_for_ollama_ready",
+            lambda timeout_seconds=30: None,
+        )
+        monkeypatch.setattr(
+            app_module,
+            "_ensure_default_model_downloaded",
+            lambda: None,
+        )
+
+        result = app_module._chat_completion_impl(
+            model="gemma3",
+            messages=[{"role": "user", "content": "hello"}],
+            temperature=0.1,
+        )
+
+        assert result == chat_payload
+        proc.terminate.assert_called_once_with()

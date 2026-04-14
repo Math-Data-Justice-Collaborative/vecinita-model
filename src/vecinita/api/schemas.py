@@ -33,7 +33,7 @@ class ChatRequest(BaseModel):
         json_schema_extra={
             "examples": [
                 {
-                    "model": "llama3.1:8b",
+                    "model": "gemma3",
                     "messages": [
                         {
                             "role": "user",
@@ -46,7 +46,7 @@ class ChatRequest(BaseModel):
                     "max_tokens": 256,
                 },
                 {
-                    "model": "llama3.1:8b",
+                    "model": "gemma3",
                     "messages": [
                         {
                             "role": "system",
@@ -61,7 +61,7 @@ class ChatRequest(BaseModel):
                     "max_tokens": 512,
                 },
                 {
-                    "model": "llama3.1:8b",
+                    "model": "gemma3",
                     "messages": [
                         {
                             "role": "user",
@@ -82,7 +82,7 @@ class ChatRequest(BaseModel):
                     "max_tokens": 400,
                 },
                 {
-                    "model": "llama3.1:8b",
+                    "model": "gemma3",
                     "messages": [
                         {
                             "role": "user",
@@ -95,7 +95,7 @@ class ChatRequest(BaseModel):
                     "max_tokens": 320,
                 },
                 {
-                    "model": "llama3.1:8b",
+                    "model": "gemma3",
                     "messages": [
                         {
                             "role": "user",
@@ -112,7 +112,7 @@ class ChatRequest(BaseModel):
     model: str = Field(
         default_factory=_default_model,
         description="Ollama model tag available on the server (see GET /health).",
-        examples=["llama3.1:8b"],
+        examples=["gemma3"],
     )
     messages: list[Message] = Field(
         ...,
@@ -143,7 +143,7 @@ class ChatResponse(BaseModel):
         json_schema_extra={
             "examples": [
                 {
-                    "model": "llama3.1:8b",
+                    "model": "gemma3",
                     "message": {
                         "role": "assistant",
                         "content": "Here is a concise summary of tenant rights.",
@@ -151,7 +151,7 @@ class ChatResponse(BaseModel):
                     "done": True,
                 },
                 {
-                    "model": "llama3.1:8b",
+                    "model": "gemma3",
                     "message": {
                         "role": "assistant",
                         "content": "El horario de la clínica es lunes a viernes.",
@@ -159,7 +159,7 @@ class ChatResponse(BaseModel):
                     "done": True,
                 },
                 {
-                    "model": "llama3.1:8b",
+                    "model": "gemma3",
                     "message": {
                         "role": "assistant",
                         "content": "Bring ID, proof of income, and proof of address.",
@@ -167,7 +167,7 @@ class ChatResponse(BaseModel):
                     "done": True,
                 },
                 {
-                    "model": "llama3.1:8b",
+                    "model": "gemma3",
                     "message": {
                         "role": "assistant",
                         "content": "Cooling centers include Main Library this weekend.",
@@ -175,7 +175,7 @@ class ChatResponse(BaseModel):
                     "done": True,
                 },
                 {
-                    "model": "llama3.1:8b",
+                    "model": "gemma3",
                     "message": {
                         "role": "assistant",
                         "content": "Bus 14 runs every 15 minutes at peak.",
@@ -186,7 +186,7 @@ class ChatResponse(BaseModel):
         }
     )
 
-    model: str = Field(..., examples=["llama3.1:8b"])
+    model: str = Field(..., examples=["gemma3"])
     message: Message
     done: bool = Field(default=True, examples=[True])
 
@@ -197,16 +197,16 @@ class StreamChunk(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
             "examples": [
-                {"model": "llama3.1:8b", "content": "Partial ", "done": False},
-                {"model": "llama3.1:8b", "content": "", "done": True},
-                {"model": "llama3.1:8b", "content": "Here is ", "done": False},
-                {"model": "llama3.1:8b", "content": "the answer.", "done": False},
-                {"model": "llama3.1:8b", "content": "\n", "done": True},
+                {"model": "gemma3", "content": "Partial ", "done": False},
+                {"model": "gemma3", "content": "", "done": True},
+                {"model": "gemma3", "content": "Here is ", "done": False},
+                {"model": "gemma3", "content": "the answer.", "done": False},
+                {"model": "gemma3", "content": "\n", "done": True},
             ]
         }
     )
 
-    model: str = Field(..., examples=["llama3.1:8b"])
+    model: str = Field(..., examples=["gemma3"])
     content: str = Field(..., examples=["Streaming token text…"])
     done: bool = Field(..., examples=[False])
 
@@ -217,10 +217,10 @@ class HealthResponse(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
             "examples": [
-                {"status": "ok", "models": ["llama3.1:8b", "llama3.2:latest"]},
+                {"status": "ok", "models": ["gemma3", "llama3.2:latest"]},
                 {"status": "error", "models": []},
                 {"status": "ok", "models": ["mistral", "phi3:mini"]},
-                {"status": "ok", "models": ["llama3.1:8b"]},
+                {"status": "ok", "models": ["gemma3"]},
                 {"status": "ok", "models": ["custom:latest"]},
             ]
         }
@@ -234,5 +234,5 @@ class HealthResponse(BaseModel):
     models: list[str] = Field(
         default_factory=list,
         description="Model tags reported by the local Ollama server.",
-        examples=[["llama3.1:8b", "llama3.2:latest"]],
+        examples=[["gemma3", "llama3.2:latest"]],
     )

@@ -18,7 +18,7 @@ docker-logs:
 	docker compose logs -f api
 
 docker-pull-model:
-	docker compose exec ollama ollama pull llama3.2
+	docker compose exec ollama ollama pull gemma3
 
 deploy:
 	PYTHONPATH=src python3 -m modal deploy src/vecinita/app.py

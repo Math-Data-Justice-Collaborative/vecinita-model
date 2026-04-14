@@ -3,6 +3,9 @@
 Communicates with a locally running Ollama server via the official
 Python client.  The server is expected to already be running (it is
 started by the Modal container entry-point in app.py).
+
+The default deployment model tag is **Gemma 3** (``gemma3``); see
+``vecinita.config.Settings.default_model`` and ``SUPPORTED_MODELS``.
 """
 
 import logging
