@@ -22,27 +22,19 @@ Preloading model weights
 Run once to pull model weights into the persistent volume; model IDs are in
 ``config.SUPPORTED_MODELS``.
 
-Local development
------------------
-    modal serve src/vecinita/app.py
+Local HTTP (Docker / Compose)
+-----------------------------
+For a local Ollama-compatible HTTP stack, use Docker ``vecinita.asgi`` + uvicorn
+(see ``Dockerfile``). Do not rely on Modal ``serve`` for this entry file.
 """
 
 from __future__ import annotations
-
-import os
 
 import modal
 
 from vecinita.config import SUPPORTED_MODELS, settings
 from vecinita.images import ollama_image
 from vecinita.volumes import MODELS_PATH, models_volume
-
-
-def _include_modal_web_endpoints() -> bool:
-    """Falsey env skips HTTP ``api`` ASGI (Modal function deploy only)."""
-    v = os.environ.get("VECINITA_MODAL_INCLUDE_WEB_ENDPOINTS", "1").strip().lower()
-    return v in {"1", "true", "yes", "on"}
-
 
 app = modal.App(settings.app_name)
 
@@ -78,51 +70,6 @@ def download_model(model_name: str) -> None:
 def download_default_model() -> None:
     """Ensure the configured default model exists in the shared volume."""
     _download_model_if_missing(settings.default_model)
-
-
-# ---------------------------------------------------------------------------
-# Web API endpoint (optional; omit with VECINITA_MODAL_INCLUDE_WEB_ENDPOINTS=0)
-# ---------------------------------------------------------------------------
-
-if _include_modal_web_endpoints():
-
-    @app.function(
-        image=ollama_image,
-        volumes={MODELS_PATH: models_volume},
-        cpu=4.0,
-        scaledown_window=settings.scaledown_window,
-        timeout=settings.timeout,
-    )
-    @modal.concurrent(max_inputs=10)
-    @modal.asgi_app()
-    def api() -> object:
-        """Expose the FastAPI application as a Modal web endpoint.
-
-        Runs on CPU (no GPU). The Ollama daemon is started once per container and
-        reused across requests for the lifetime of the container (``scaledown_window``).
-        """
-        import subprocess
-
-        # Start the Ollama server.
-        proc = subprocess.Popen(  # noqa: F841  (kept to allow clean shutdown if needed)
-            ["ollama", "serve"],
-            env=_ollama_env(),
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-
-        # Wait until the server is accepting requests; fail fast if not ready.
-        try:
-            _wait_for_ollama_ready(timeout_seconds=30)
-        except RuntimeError:
-            proc.terminate()
-            raise
-
-        _ensure_default_model_downloaded()
-
-        from vecinita.api.routes import create_app
-
-        return create_app(ollama_host=settings.ollama_host)
 
 
 @app.function(
