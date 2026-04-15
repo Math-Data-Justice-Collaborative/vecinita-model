@@ -29,16 +29,16 @@ class TestDeploymentDefaults:
         content = config_source.read_text(encoding="utf-8")
         assert 'default_model: str = "gemma3"' in content
 
-    def test_api_function_uses_cpu_only(self):
+    def test_chat_completion_uses_cpu_only(self):
         # Assert on Modal's resolved spec (not a raw source substring) so refactors
         # and quote style cannot false-fail CI while the deployment stays CPU-only.
-        gpus = app_module.api.spec.gpus
+        gpus = app_module.chat_completion.spec.gpus
         assert not gpus, (
-            f"API function should not request a GPU (CPU inference), got {gpus!r}"
+            f"chat_completion should not request a GPU (CPU inference), got {gpus!r}"
         )
-        cpu = app_module.api.spec.cpu
+        cpu = app_module.chat_completion.spec.cpu
         assert cpu is not None and cpu >= 4.0, (
-            f"API function should allocate CPU cores, got {cpu!r}"
+            f"chat_completion should allocate CPU cores, got {cpu!r}"
         )
 
 
@@ -133,80 +133,6 @@ class TestDownloadModel:
             raw_download_model("llama3.2")
 
         ollama_module.pull.assert_not_called()
-        proc.terminate.assert_called_once_with()
-
-
-class TestApiFactory:
-    def test_starts_server_waits_for_readiness_and_builds_fastapi_app(
-        self, monkeypatch
-    ):
-        raw_api = app_module.api.get_raw_f()
-        proc = MagicMock(spec=subprocess.Popen)
-        client = MagicMock()
-        client.list.side_effect = [
-            RuntimeError("not ready"),
-            SimpleNamespace(models=[]),
-        ]
-        create_app = MagicMock(return_value="fastapi-app")
-        ollama_module = SimpleNamespace(Client=MagicMock(return_value=client))
-        sleep = MagicMock()
-        ensure_default_model = MagicMock()
-
-        monkeypatch.setattr(subprocess, "Popen", MagicMock(return_value=proc))
-        monkeypatch.setattr("time.sleep", sleep)
-        monkeypatch.setattr(
-            app_module,
-            "_ensure_default_model_downloaded",
-            ensure_default_model,
-        )
-        monkeypatch.setitem(__import__("sys").modules, "ollama", ollama_module)
-        monkeypatch.setitem(
-            __import__("sys").modules,
-            "vecinita.api.routes",
-            SimpleNamespace(create_app=create_app),
-        )
-
-        result = raw_api()
-
-        assert result == "fastapi-app"
-        subprocess.Popen.assert_called_once()
-        assert ollama_module.Client.call_count == 2
-        sleep.assert_called_once_with(0.5)
-        ensure_default_model.assert_called_once_with()
-        create_app.assert_called_once_with(ollama_host=app_module.settings.ollama_host)
-
-    def test_fails_fast_and_terminates_when_server_never_ready(self, monkeypatch):
-        raw_api = app_module.api.get_raw_f()
-        proc = MagicMock(spec=subprocess.Popen)
-        client = MagicMock()
-        client.list.side_effect = RuntimeError("not ready")
-        ollama_module = SimpleNamespace(Client=MagicMock(return_value=client))
-
-        class FakeTime:
-            def __init__(self):
-                self.now = 0.0
-
-            def time(self):
-                self.now += 31.0
-                return self.now
-
-        fake_time = FakeTime()
-        sleep = MagicMock()
-        ensure_default_model = MagicMock()
-
-        monkeypatch.setattr(subprocess, "Popen", MagicMock(return_value=proc))
-        monkeypatch.setattr("time.time", fake_time.time)
-        monkeypatch.setattr("time.sleep", sleep)
-        monkeypatch.setattr(
-            app_module,
-            "_ensure_default_model_downloaded",
-            ensure_default_model,
-        )
-        monkeypatch.setitem(__import__("sys").modules, "ollama", ollama_module)
-
-        with pytest.raises(RuntimeError, match="did not become ready"):
-            raw_api()
-
         proc.terminate.assert_called_once_with()
 
 
