@@ -69,8 +69,8 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     env:
-      MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID || secrets.MODAL_API_TOKEN_ID || secrets.MODAL_AUTH_KEY }}
-      MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET || secrets.MODAL_API_TOKEN_SECRET || secrets.MODAL_AUTH_SECRET }}
+      MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID || secrets.MODAL_TOKEN_ID || secrets.MODAL_AUTH_KEY }}
+      MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET || secrets.MODAL_TOKEN_SECRET || secrets.MODAL_AUTH_SECRET }}
       MODAL_PROFILE: ${{ secrets.MODAL_API_PROFILE || vars.MODAL_API_PROFILE || 'vecinita' }}
 
     steps:
@@ -88,7 +88,7 @@ jobs:
           if [[ -n "${MODAL_TOKEN_ID}" && -n "${MODAL_TOKEN_SECRET}" ]]; then
             echo "Modal credentials found."
           else
-            echo "::error::Modal credentials missing. Set MODAL_TOKEN_ID and MODAL_TOKEN_SECRET (or MODAL_API_TOKEN_ID / MODAL_API_TOKEN_SECRET, or MODAL_AUTH_KEY / MODAL_AUTH_SECRET)."
+            echo "::error::Modal credentials missing. Set MODAL_TOKEN_ID and MODAL_TOKEN_SECRET (or MODAL_TOKEN_ID / MODAL_TOKEN_SECRET, or MODAL_AUTH_KEY / MODAL_AUTH_SECRET)."
             exit 1
           fi
 
