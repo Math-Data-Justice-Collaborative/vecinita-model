@@ -92,6 +92,18 @@ def chat_completion(
     )  # pragma: no cover
 
 
+def _resolve_ollama_model_name(model: str | None) -> str:
+    """Resolve Ollama model name; blank ``model`` uses ``settings.default_model``."""
+    raw = (model or "").strip() or settings.default_model
+    meta = SUPPORTED_MODELS.get(raw)
+    if meta is not None:
+        return str(meta["ollama_name"])
+    for entry in SUPPORTED_MODELS.values():
+        if entry["ollama_name"] == raw:
+            return str(entry["ollama_name"])
+    return raw
+
+
 def _chat_completion_impl(
     model: str,
     messages: list[dict[str, str]],
@@ -101,6 +113,8 @@ def _chat_completion_impl(
     import subprocess
 
     import ollama
+
+    ollama_model = _resolve_ollama_model_name(model)
 
     proc = subprocess.Popen(
         ["ollama", "serve"],
@@ -112,7 +126,7 @@ def _chat_completion_impl(
         _wait_for_ollama_ready(timeout_seconds=30)
         _ensure_default_model_downloaded()
         response = ollama.Client(host=settings.ollama_host).chat(
-            model=model,
+            model=ollama_model,
             messages=messages,
             options={"temperature": temperature},
         )
@@ -141,10 +155,11 @@ def _wait_for_ollama_ready(timeout_seconds: int = 30) -> None:
 
     import ollama
 
+    client = ollama.Client(host=settings.ollama_host)
     deadline = time.time() + timeout_seconds
     while time.time() < deadline:
         try:
-            ollama.Client().list()
+            client.list()
             return
         except Exception:
             time.sleep(0.5)
@@ -166,13 +181,14 @@ def _ensure_default_model_downloaded() -> None:
         )
 
     ollama_name = metadata["ollama_name"]
-    listed = ollama.Client().list()
+    client = ollama.Client(host=settings.ollama_host)
+    listed = client.list()
     installed = {m.model for m in listed.models}
     if ollama_name in installed:
         return
 
     print(f"Default model '{ollama_name}' not found in volume. Pulling model now...")
-    ollama.pull(ollama_name)
+    client.pull(ollama_name)
     models_volume.commit()
     print(f"Default model '{ollama_name}' is ready.")
 
@@ -194,13 +210,14 @@ def _download_model_if_missing(model_name: str) -> None:
     )
     try:
         _wait_for_ollama_ready(timeout_seconds=30)
-        installed = {m.model for m in ollama.Client().list().models}
+        client = ollama.Client(host=settings.ollama_host)
+        installed = {m.model for m in client.list().models}
         if ollama_name in installed:
             print(f"Model '{ollama_name}' already present in volume; skipping pull.")
             return
 
         print(f"Pulling {ollama_name} ...")
-        ollama.pull(ollama_name)
+        client.pull(ollama_name)
 
         # Persist changes to the volume.
         models_volume.commit()
