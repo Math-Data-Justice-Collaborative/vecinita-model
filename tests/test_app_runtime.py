@@ -69,7 +69,7 @@ class TestDownloadModel:
         raw_download_model("llama3.2")
 
         subprocess.Popen.assert_called_once()
-        ollama_module.pull.assert_called_once_with("llama3.2")
+        client.pull.assert_called_once_with("llama3.2")
         commit.assert_called_once_with()
         proc.terminate.assert_called_once_with()
         sleep.assert_not_called()
@@ -91,9 +91,10 @@ class TestDownloadModel:
         proc = MagicMock(spec=subprocess.Popen)
         client = MagicMock()
         client.list.return_value = SimpleNamespace(models=[])
+        client.pull.side_effect = RuntimeError("pull failed")
         ollama_module = SimpleNamespace(
             Client=MagicMock(return_value=client),
-            pull=MagicMock(side_effect=RuntimeError("pull failed")),
+            pull=MagicMock(),
         )
 
         monkeypatch.setattr(subprocess, "Popen", MagicMock(return_value=proc))
@@ -132,7 +133,7 @@ class TestDownloadModel:
         with pytest.raises(RuntimeError, match="did not become ready"):
             raw_download_model("llama3.2")
 
-        ollama_module.pull.assert_not_called()
+        client.pull.assert_not_called()
         proc.terminate.assert_called_once_with()
 
 
@@ -155,7 +156,7 @@ class TestEnsureDefaultModelDownloaded:
 
         app_module._ensure_default_model_downloaded()
 
-        ollama_module.pull.assert_called_once_with(ollama_name)
+        client.pull.assert_called_once_with(ollama_name)
         commit.assert_called_once_with()
 
     def test_skips_pull_when_default_model_present(self, monkeypatch):
@@ -176,7 +177,7 @@ class TestEnsureDefaultModelDownloaded:
 
         app_module._ensure_default_model_downloaded()
 
-        ollama_module.pull.assert_not_called()
+        client.pull.assert_not_called()
         commit.assert_not_called()
 
     def test_raises_when_default_model_not_in_registry(self, monkeypatch):
@@ -203,7 +204,7 @@ class TestDownloadModelIfMissing:
 
         app_module._download_model_if_missing(model_name)
 
-        ollama_module.pull.assert_not_called()
+        client.pull.assert_not_called()
         proc.terminate.assert_called_once_with()
 
 
@@ -235,3 +236,34 @@ class TestChatCompletionImplementation:
 
         assert result == chat_payload
         proc.terminate.assert_called_once_with()
+        client.chat.assert_called_once()
+        call_kw = client.chat.call_args.kwargs
+        assert call_kw["model"] == "gemma3"
+
+    def test_chat_completion_empty_model_defaults_to_gemma3(self, monkeypatch):
+        proc = MagicMock(spec=subprocess.Popen)
+        chat_payload = {"message": {"content": "hello"}}
+        client = MagicMock()
+        client.chat.return_value = chat_payload
+        ollama_module = SimpleNamespace(Client=MagicMock(return_value=client))
+        monkeypatch.setattr(subprocess, "Popen", MagicMock(return_value=proc))
+        monkeypatch.setitem(__import__("sys").modules, "ollama", ollama_module)
+        monkeypatch.setattr(
+            app_module,
+            "_wait_for_ollama_ready",
+            lambda timeout_seconds=30: None,
+        )
+        monkeypatch.setattr(
+            app_module,
+            "_ensure_default_model_downloaded",
+            lambda: None,
+        )
+
+        app_module._chat_completion_impl(
+            model="",
+            messages=[{"role": "user", "content": "hello"}],
+            temperature=0.0,
+        )
+
+        call_kw = client.chat.call_args.kwargs
+        assert call_kw["model"] == "gemma3"
