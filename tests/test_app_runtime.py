@@ -328,6 +328,36 @@ class TestChatCompletionImplementation:
         call_kw = client.chat.call_args.kwargs
         assert call_kw["model"] == "gemma3"
 
+    def test_chat_completion_unknown_model_resolves_to_default(self, monkeypatch):
+        proc = MagicMock(spec=subprocess.Popen)
+        chat_payload = {"message": {"content": "hello"}}
+        client = MagicMock()
+        client.chat.return_value = chat_payload
+        ollama_module = SimpleNamespace(Client=MagicMock(return_value=client))
+        monkeypatch.setattr(subprocess, "Popen", MagicMock(return_value=proc))
+        monkeypatch.setitem(__import__("sys").modules, "ollama", ollama_module)
+        monkeypatch.setattr(
+            app_module,
+            "_wait_for_ollama_ready",
+            lambda timeout_seconds=30: None,
+        )
+        monkeypatch.setattr(
+            app_module,
+            "_ensure_startup_model_downloaded",
+            lambda: None,
+        )
+        monkeypatch.setattr(app_module, "_run_teardown_lifecycle", lambda: None)
+        monkeypatch.setattr(app_module.settings, "default_model", "gemma3")
+
+        app_module._chat_completion_impl(
+            model="totally-unknown-id",
+            messages=[{"role": "user", "content": "hello"}],
+            temperature=0.0,
+        )
+
+        call_kw = client.chat.call_args.kwargs
+        assert call_kw["model"] == "gemma3"
+
 
 class TestLifecycleFoundations:
     def test_plugin_registry_validates_duplicate_order(self):
@@ -363,7 +393,12 @@ class TestLifecycleFoundations:
 
     def test_resolve_ollama_model_name_passthrough_and_alias(self):
         assert app_module._resolve_ollama_model_name("gemma3") == "gemma3"
-        assert app_module._resolve_ollama_model_name("custom:latest") == "custom:latest"
+        assert app_module._resolve_ollama_model_name("mistral") == "mistral"
+        assert app_module._resolve_ollama_model_name("custom:latest") == "gemma3"
+
+    def test_resolve_ollama_model_name_unknown_falls_back_to_configured_default(self, monkeypatch):
+        monkeypatch.setattr(app_module.settings, "default_model", "phi3")
+        assert app_module._resolve_ollama_model_name("not-a-real-model") == "phi3"
 
     def test_ensure_default_model_downloaded_aliases_startup_helper(self, monkeypatch):
         called = {"count": 0}

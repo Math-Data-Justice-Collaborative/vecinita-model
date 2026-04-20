@@ -136,7 +136,12 @@ def chat_completion(
 
 
 def _resolve_ollama_model_name(model: str | None) -> str:
-    """Resolve Ollama model name; blank ``model`` uses ``settings.default_model``."""
+    """Resolve Ollama model name; blank ``model`` uses ``settings.default_model``.
+
+    Unknown ids fall back to ``settings.default_model`` so callers cannot pass
+    fuzzed or arbitrary strings through to ``ollama.Client.chat`` (which may
+    respond with HTTP 400 ``model is required``).
+    """
     raw = (model or "").strip() or settings.default_model
     meta = SUPPORTED_MODELS.get(raw)
     if meta is not None:
@@ -144,7 +149,18 @@ def _resolve_ollama_model_name(model: str | None) -> str:
     for entry in SUPPORTED_MODELS.values():
         if entry["ollama_name"] == raw:
             return str(entry["ollama_name"])
-    return raw
+    fallback_id = (settings.default_model or "gemma3").strip() or "gemma3"
+    logger.warning(
+        "chat_completion: unknown model_id=%r; using default_model=%s",
+        model,
+        fallback_id,
+    )
+    fallback_meta = SUPPORTED_MODELS.get(fallback_id)
+    if fallback_meta is None:
+        raise RuntimeError(
+            f"default_model {fallback_id!r} is not in SUPPORTED_MODELS; fix Modal configuration."
+        )
+    return str(fallback_meta["ollama_name"])
 
 
 def _chat_completion_impl(
