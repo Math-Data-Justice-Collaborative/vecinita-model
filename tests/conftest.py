@@ -1,24 +1,28 @@
-"""Shared pytest fixtures."""
+"""Shared fixtures for model-modal tests."""
 
+from __future__ import annotations
+
+import os
+from collections.abc import Generator
 from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
-from vecinita.api.routes import create_app
+# ``DEFAULT_MODEL`` from a monorepo ``.env`` may not be a ``SUPPORTED_MODELS`` id here.
+os.environ.pop("DEFAULT_MODEL", None)
 
 
-@pytest.fixture()
-def mock_client():
-    """Patch ``ollama.Client`` used inside ``create_app`` and yield the mock client."""
-    with patch("vecinita.api.routes._ollama") as mock_module:
-        client = MagicMock()
-        mock_module.Client.return_value = client
-        yield client
+@pytest.fixture
+def mock_client() -> MagicMock:
+    """Ollama client stub; tests configure ``list``, ``chat``, etc. on it."""
+    return MagicMock()
 
 
-@pytest.fixture()
-def http(mock_client) -> TestClient:
-    """FastAPI TestClient with Ollama stubbed out."""
-    app = create_app(ollama_host="http://localhost:11434")
-    return TestClient(app, raise_server_exceptions=False)
+@pytest.fixture
+def http(mock_client: MagicMock) -> Generator[TestClient, None, None]:
+    """TestClient for ``create_app`` with the Ollama client constructor patched."""
+    with patch("vecinita.api.routes._ollama.Client", return_value=mock_client):
+        from vecinita.api.routes import create_app
+
+        yield TestClient(create_app(ollama_host="http://test-ollama.invalid"))

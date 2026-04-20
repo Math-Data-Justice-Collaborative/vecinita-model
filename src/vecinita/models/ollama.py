@@ -21,6 +21,22 @@ from .base import BaseModelBackend
 
 logger = logging.getLogger(__name__)
 
+TRANSIENT_CONNECTION_MARKERS = (
+    "connection refused",
+    "temporarily unavailable",
+    "timeout",
+    "timed out",
+    "try again",
+)
+
+
+def classify_connection_error(error: Exception) -> str:
+    """Classify Ollama startup/runtime failures for retry policy decisions."""
+    text = str(error).lower()
+    if any(marker in text for marker in TRANSIENT_CONNECTION_MARKERS):
+        return "transient_failure"
+    return "permanent_failure"
+
 
 class OllamaBackend(BaseModelBackend):
     """Talk to an Ollama server running on localhost."""

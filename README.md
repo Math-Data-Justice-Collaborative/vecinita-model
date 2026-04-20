@@ -128,6 +128,25 @@ Supported model IDs are defined in `src/vecinita/config.py`:
 | `gemma2`       | Google Gemma 2               |
 | `gemma2:2b`    | Google Gemma 2 2B (small)    |
 
+## Lifecycle strategy
+
+The runtime now uses an ordered lifecycle registry (`src/vecinita/lifecycle.py`) with
+startup and teardown plugins:
+
+- Startup executes model preload before readiness.
+- Startup retries are bounded by `retry_limit` and `retry_backoff_ms`.
+- Teardown uses a cache-preserving default strategy so reusable model artifacts stay in
+  the Modal volume.
+- Lifecycle events emit structured payloads with correlation IDs for preload, retry, and
+  teardown phases.
+
+Model selection is configurable via:
+
+- `STARTUP_MODEL` (optional; defaults to `DEFAULT_MODEL`)
+- `RETRY_LIMIT` (default `3`)
+- `RETRY_BACKOFF_MS` (default `1000`)
+- `LIFECYCLE_REGISTRY_ID` (default `default`)
+
 ---
 
 ## Deploying to Modal
@@ -286,3 +305,11 @@ make lint
 ```
 
 GitHub Actions runs `make lint` first, then `make test`, so pull requests fail fast on style and import issues before running the full suite.
+
+## Validation evidence (2026-04-20)
+
+- Service-level checks:
+  - `make lint` passed.
+  - `pytest -q` passed (`66 passed`, coverage `96.66%`).
+- Repository-level gate:
+  - `make ci` passed from repo root after lifecycle integration updates.

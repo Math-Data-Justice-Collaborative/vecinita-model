@@ -236,3 +236,8 @@ class HealthResponse(BaseModel):
         description="Model tags reported by the local Ollama server.",
         examples=[["gemma3", "llama3.2:latest"]],
     )
+    startup_model: str | None = Field(
+        default=None,
+        description="Configured startup model id used for preload readiness.",
+        examples=["gemma3"],
+    )

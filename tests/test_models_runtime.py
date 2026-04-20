@@ -9,20 +9,24 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
+from pydantic import ValidationError
 
 from vecinita.api.schemas import Message
+from vecinita.lifecycle import LifecyclePlugin, PluginRegistry
 from vecinita.models.base import BaseModelBackend
-from vecinita.models.ollama import OllamaBackend
+from vecinita.models.ollama import OllamaBackend, classify_connection_error
 
 
 class TestInfrastructureModules:
     def test_imports_modal_infrastructure_modules(self):
         images = importlib.import_module("vecinita.images")
         volumes = importlib.import_module("vecinita.volumes")
+        asgi = importlib.import_module("vecinita.asgi")
 
         assert images.ollama_image is not None
         assert volumes.models_volume is not None
         assert volumes.MODELS_PATH == "/models"
+        assert asgi.app is not None
 
 
 class TestBaseModelBackend:
@@ -209,3 +213,54 @@ class TestOllamaBackend:
         proc.wait.assert_called_once_with(timeout=5)
         proc.kill.assert_called_once_with()
         warning.assert_called_once()
+
+
+class TestConnectionFailureClassification:
+    def test_classifies_transient_connection_errors(self):
+        err = RuntimeError("Connection refused while contacting ollama")
+        assert classify_connection_error(err) == "transient_failure"
+
+    def test_classifies_non_transient_errors_as_permanent(self):
+        err = RuntimeError("unsupported model identifier")
+        assert classify_connection_error(err) == "permanent_failure"
+
+
+class TestStartupModelResolution:
+    def test_raises_for_unsupported_startup_model(self, monkeypatch):
+        from vecinita import config as config_module
+
+        monkeypatch.setattr(config_module.settings, "startup_model", "bad-model")
+        with pytest.raises(ValueError, match="Unsupported startup model"):
+            config_module.resolve_startup_model_id()
+
+    def test_settings_rejects_non_positive_retry_limit(self):
+        from vecinita.config import Settings
+
+        with pytest.raises(ValidationError, match="greater than or equal to 1"):
+            Settings(retry_limit=0)
+
+
+class TestTeardownOrdering:
+    def test_registry_executes_teardown_plugins_in_deterministic_order(self):
+        registry = PluginRegistry("ordered")
+        order: list[str] = []
+
+        registry.register(
+            LifecyclePlugin(
+                plugin_id="teardown-b",
+                phase="teardown",
+                order=20,
+                hook=lambda _ctx: order.append("b"),
+            )
+        )
+        registry.register(
+            LifecyclePlugin(
+                plugin_id="teardown-a",
+                phase="teardown",
+                order=10,
+                hook=lambda _ctx: order.append("a"),
+            )
+        )
+
+        registry.execute_phase("teardown", {"correlation_id": "cid-order"})
+        assert order == ["a", "b"]

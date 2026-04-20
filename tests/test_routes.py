@@ -41,7 +41,10 @@ def _make_stream_chunks(tokens: list[str]) -> list[MagicMock]:
 
 
 class TestHealthEndpoint:
-    def test_returns_ok_when_ollama_healthy(self, http, mock_client):
+    def test_returns_ok_when_ollama_healthy(self, http, mock_client, monkeypatch):
+        import vecinita.api.routes as routes
+
+        monkeypatch.setattr(routes, "resolve_startup_model_id", lambda: "gemma3")
         mock_client.list.return_value = _make_list_response(["llama3.2", "mistral"])
         resp = http.get("/health")
         assert resp.status_code == 200
@@ -49,14 +52,37 @@ class TestHealthEndpoint:
         assert body["status"] == "ok"
         assert "llama3.2" in body["models"]
         assert "mistral" in body["models"]
+        assert body["startup_model"] == "gemma3"
 
-    def test_returns_error_when_ollama_down(self, http, mock_client):
+    def test_returns_error_when_ollama_down(self, http, mock_client, monkeypatch):
+        import vecinita.api.routes as routes
+
+        monkeypatch.setattr(routes, "resolve_startup_model_id", lambda: "gemma3")
         mock_client.list.side_effect = ConnectionRefusedError("no server")
         resp = http.get("/health")
         assert resp.status_code == 200
         body = resp.json()
         assert body["status"] == "error"
         assert body["models"] == []
+        assert body["startup_model"] == "gemma3"
+
+    def test_returns_error_when_startup_model_config_invalid(
+        self, http, mock_client, monkeypatch
+    ):
+        import vecinita.api.routes as routes
+
+        def _bad_startup_model() -> str:
+            raise ValueError("bad startup model")
+
+        mock_client.list.side_effect = RuntimeError("backend down")
+        monkeypatch.setattr(routes, "resolve_startup_model_id", _bad_startup_model)
+
+        resp = http.get("/health")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "error"
+        assert body["models"] == []
+        assert body["startup_model"] is None
 
 
 # ---------------------------------------------------------------------------

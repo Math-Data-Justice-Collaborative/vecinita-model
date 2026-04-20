@@ -15,7 +15,7 @@ import ollama as _ollama
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 
-from ..config import settings
+from ..config import resolve_startup_model_id, settings
 from .schemas import (
     ChatRequest,
     ChatResponse,
@@ -51,13 +51,31 @@ def create_app(ollama_host: str = settings.ollama_host) -> FastAPI:  # noqa: B00
     @app.get("/health", response_model=HealthResponse, tags=["Meta"])
     async def health() -> HealthResponse:
         """Return service status and the list of locally available models."""
+        startup_model: str | None
+        try:
+            startup_model = resolve_startup_model_id()
+        except ValueError as exc:
+            logger.warning(
+                "Startup model configuration invalid for health endpoint: %s",
+                exc,
+            )
+            startup_model = None
+
         try:
             listed = client.list()
             model_names = [m.model for m in listed.models]
-            return HealthResponse(status="ok", models=model_names)
+            return HealthResponse(
+                status="ok",
+                models=model_names,
+                startup_model=startup_model,
+            )
         except Exception as exc:
             logger.warning("Health check failed: %s", exc)
-            return HealthResponse(status="error", models=[])
+            return HealthResponse(
+                status="error",
+                models=[],
+                startup_model=startup_model,
+            )
 
     @app.get("/api/health", response_model=HealthResponse, tags=["Meta"])
     async def api_health() -> HealthResponse:

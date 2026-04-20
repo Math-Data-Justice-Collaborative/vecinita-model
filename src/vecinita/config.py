@@ -1,5 +1,6 @@
 """Application configuration and supported model registry."""
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -14,9 +15,27 @@ class Settings(BaseSettings):
     scaledown_window: int = 300
     # Request timeout in seconds
     timeout: int = 600
+    # Startup preload model; blank falls back to default_model.
+    startup_model: str | None = None
+    # Lifecycle retry behavior for startup preload.
+    retry_limit: int = Field(default=3, ge=1)
+    retry_backoff_ms: int = 1000
+    # Active lifecycle registry identifier.
+    lifecycle_registry_id: str = "default"
 
 
 settings = Settings()
+
+
+def resolve_startup_model_id() -> str:
+    """Return configured startup model id, falling back to default model."""
+    model_id = (settings.startup_model or "").strip() or settings.default_model
+    if model_id not in SUPPORTED_MODELS:
+        supported = ", ".join(sorted(SUPPORTED_MODELS))
+        raise ValueError(
+            f"Unsupported startup model '{model_id}'. Supported models: {supported}"
+        )
+    return model_id
 
 # Registry of supported models.
 # Each entry maps a friendly model ID to its backend and backend-specific name.

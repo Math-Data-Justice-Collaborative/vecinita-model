@@ -20,7 +20,10 @@ Modal's *Apps, Functions, and entrypoints* guide: use ``with app.run():`` and
 Preloading model weights
 ------------------------
 Run once to pull model weights into the persistent volume; model IDs are in
-``config.SUPPORTED_MODELS``.
+``config.SUPPORTED_MODELS``. The monorepo ``.github/workflows/modal-deploy.yml``
+and this package's ``.github/workflows/deploy.yml`` run ``download_default_model``
+after ``modal deploy`` so the default (typically ``gemma3``) is present on the
+``vecinita-models`` volume before traffic hits cold containers.
 
 Local HTTP (Docker / Compose)
 -----------------------------
@@ -30,13 +33,22 @@ For a local Ollama-compatible HTTP stack, use Docker ``vecinita.asgi`` + uvicorn
 
 from __future__ import annotations
 
+import logging
+
 import modal
 
-from vecinita.config import SUPPORTED_MODELS, settings
+from vecinita.config import SUPPORTED_MODELS, resolve_startup_model_id, settings
 from vecinita.images import ollama_image
+from vecinita.lifecycle import (
+    make_default_registry,
+    make_lifecycle_event,
+    new_correlation_id,
+)
+from vecinita.models.ollama import classify_connection_error
 from vecinita.volumes import MODELS_PATH, models_volume
 
 app = modal.App(settings.app_name)
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Weight pre-loading function
@@ -69,7 +81,7 @@ def download_model(model_name: str) -> None:
 )
 def download_default_model() -> None:
     """Ensure the configured default model exists in the shared volume."""
-    _download_model_if_missing(settings.default_model)
+    _download_model_if_missing(resolve_startup_model_id())
 
 
 @app.function(
@@ -124,7 +136,7 @@ def _chat_completion_impl(
     )
     try:
         _wait_for_ollama_ready(timeout_seconds=30)
-        _ensure_default_model_downloaded()
+        _ensure_startup_model_downloaded()
         response = ollama.Client(host=settings.ollama_host).chat(
             model=ollama_model,
             messages=messages,
@@ -132,6 +144,7 @@ def _chat_completion_impl(
         )
         return dict(response)
     finally:
+        _run_teardown_lifecycle()
         proc.terminate()
 
 
@@ -169,28 +182,210 @@ def _wait_for_ollama_ready(timeout_seconds: int = 30) -> None:
     )
 
 
+def _ensure_startup_model_downloaded() -> None:
+    """Ensure configured startup model is cached before serving traffic."""
+    _run_startup_lifecycle()
+
+
 def _ensure_default_model_downloaded() -> None:
-    """Pull the configured default model if it is missing in the volume."""
-    import ollama
+    """Backward-compatible helper kept for existing tests/callers."""
+    _ensure_startup_model_downloaded()
 
-    model_id = settings.default_model
-    metadata = SUPPORTED_MODELS.get(model_id)
-    if metadata is None:
-        raise RuntimeError(
-            f"Default model '{model_id}' is not present in SUPPORTED_MODELS."
+
+def _run_startup_lifecycle() -> None:
+    correlation_id = new_correlation_id()
+    startup_model = resolve_startup_model_id()
+    max_attempts = settings.retry_limit
+    backoff_seconds = settings.retry_backoff_ms / 1000.0
+    if max_attempts < 1:
+        raise ValueError(
+            "Invalid startup retry configuration: retry_limit must be >= 1 "
+            f"(got {max_attempts})."
         )
+    retry_window_ms = settings.retry_limit * settings.retry_backoff_ms
+    _emit_lifecycle_event(
+        make_lifecycle_event(
+            event_type="preload_start",
+            phase="startup",
+            correlation_id=correlation_id,
+            details={
+                "startup_model": startup_model,
+                "retry_limit": settings.retry_limit,
+                "retry_backoff_ms": settings.retry_backoff_ms,
+                "retry_window_ms": retry_window_ms,
+            },
+        )
+    )
+    registry = make_default_registry(
+        registry_id=settings.lifecycle_registry_id,
+        startup_hook=_startup_preload_hook,
+        teardown_hook=_teardown_cache_preserving_hook,
+    )
+    for attempt in range(1, max_attempts + 1):
+        context = {
+            "correlation_id": correlation_id,
+            "attempt_count": attempt,
+            "startup_model": startup_model,
+            "failure_phase": "startup",
+        }
+        try:
+            registry.execute_phase("startup", context)
+            _emit_lifecycle_event(
+                make_lifecycle_event(
+                    event_type="preload_success",
+                    phase="startup",
+                    correlation_id=correlation_id,
+                    details={
+                        "startup_model": startup_model,
+                        "attempt_count": attempt,
+                        "retry_window_ms": retry_window_ms,
+                    },
+                )
+            )
+            return
+        except Exception as exc:
+            failure_type = classify_connection_error(exc)
+            if failure_type == "permanent_failure":
+                _emit_lifecycle_event(
+                    make_lifecycle_event(
+                        event_type="preload_failure",
+                        phase="startup",
+                        correlation_id=correlation_id,
+                        details=_lifecycle_error_payload(
+                            error_code="STARTUP_PRELOAD_PERMANENT_FAILURE",
+                            failure_phase="startup",
+                            attempt_count=attempt,
+                            recommended_operator_action=(
+                                "Validate startup model id and registry configuration."
+                            ),
+                            startup_model=startup_model,
+                            retry_window_ms=retry_window_ms,
+                            error=str(exc),
+                        ),
+                    )
+                )
+                raise RuntimeError(
+                    "Startup preload failed with permanent error. "
+                    f"startup_model={startup_model}, attempt_count={attempt}"
+                ) from exc
+            if attempt >= max_attempts:
+                _emit_lifecycle_event(
+                    make_lifecycle_event(
+                        event_type="preload_failure",
+                        phase="startup",
+                        correlation_id=correlation_id,
+                        details=_lifecycle_error_payload(
+                            error_code="STARTUP_PRELOAD_FAILED",
+                            failure_phase="startup",
+                            attempt_count=attempt,
+                            recommended_operator_action=(
+                                "Verify model id, storage capacity, and source "
+                                "availability."
+                            ),
+                            startup_model=startup_model,
+                            retry_window_ms=retry_window_ms,
+                            error=str(exc),
+                        ),
+                    )
+                )
+                raise RuntimeError(
+                    "Startup preload failed after retry limit. "
+                    f"startup_model={startup_model}, "
+                    f"attempt_count={attempt}, retry_window_ms={retry_window_ms}"
+                ) from exc
+            _emit_lifecycle_event(
+                make_lifecycle_event(
+                    event_type="retry",
+                    phase="startup",
+                    correlation_id=correlation_id,
+                    details={
+                        "attempt_count": attempt,
+                        "next_attempt_in_ms": settings.retry_backoff_ms,
+                        "startup_model": startup_model,
+                        "error": str(exc),
+                    },
+                )
+            )
+            import time
 
-    ollama_name = metadata["ollama_name"]
-    client = ollama.Client(host=settings.ollama_host)
-    listed = client.list()
-    installed = {m.model for m in listed.models}
-    if ollama_name in installed:
-        return
+            time.sleep(backoff_seconds)
 
-    print(f"Default model '{ollama_name}' not found in volume. Pulling model now...")
-    client.pull(ollama_name)
-    models_volume.commit()
-    print(f"Default model '{ollama_name}' is ready.")
+
+def _run_teardown_lifecycle(correlation_id: str | None = None) -> None:
+    correlation = correlation_id or new_correlation_id()
+    registry = make_default_registry(
+        registry_id=settings.lifecycle_registry_id,
+        startup_hook=_startup_preload_hook,
+        teardown_hook=_teardown_cache_preserving_hook,
+    )
+    _emit_lifecycle_event(
+        make_lifecycle_event(
+            event_type="teardown_start",
+            phase="teardown",
+            correlation_id=correlation,
+            details={"registry_id": settings.lifecycle_registry_id},
+        )
+    )
+    try:
+        registry.execute_phase("teardown", {"correlation_id": correlation})
+        _emit_lifecycle_event(
+            make_lifecycle_event(
+                event_type="teardown_success",
+                phase="teardown",
+                correlation_id=correlation,
+                details={"cache_preserved": True, "temp_artifacts_cleaned": True},
+            )
+        )
+    except Exception as exc:
+        _emit_lifecycle_event(
+            make_lifecycle_event(
+                event_type="teardown_failure",
+                phase="teardown",
+                correlation_id=correlation,
+                details={
+                    "error_code": "TEARDOWN_FAILURE",
+                    "failure_phase": "teardown",
+                    "attempt_count": 1,
+                    "recommended_operator_action": (
+                        "Inspect teardown logs and verify temp artifact permissions."
+                    ),
+                    "error": str(exc),
+                },
+            )
+        )
+        raise
+
+
+def _lifecycle_error_payload(
+    *,
+    error_code: str,
+    failure_phase: str,
+    attempt_count: int,
+    recommended_operator_action: str,
+    **extra: object,
+) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "error_code": error_code,
+        "failure_phase": failure_phase,
+        "attempt_count": attempt_count,
+        "recommended_operator_action": recommended_operator_action,
+    }
+    payload.update(extra)
+    return payload
+
+
+def _emit_lifecycle_event(event: dict[str, object]) -> None:
+    logger.info("lifecycle_event=%s", event)
+
+
+def _startup_preload_hook(context: dict[str, object]) -> None:
+    model_name = str(context["startup_model"])
+    _download_model_if_missing(model_name)
+
+
+def _teardown_cache_preserving_hook(context: dict[str, object]) -> None:
+    # Default teardown intentionally keeps persistent model cache.
+    _ = context
 
 
 def _download_model_if_missing(model_name: str) -> None:
@@ -199,7 +394,13 @@ def _download_model_if_missing(model_name: str) -> None:
 
     import ollama
 
-    ollama_name = SUPPORTED_MODELS[model_name]["ollama_name"]
+    metadata = SUPPORTED_MODELS.get(model_name)
+    if metadata is None:
+        raise RuntimeError(
+            "Configured startup model "
+            f"'{model_name}' is not present in SUPPORTED_MODELS."
+        )
+    ollama_name = metadata["ollama_name"]
 
     # Start the Ollama daemon so we can issue pull/list commands through it.
     proc = subprocess.Popen(

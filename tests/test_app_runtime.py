@@ -11,6 +11,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from vecinita import app as app_module
+from vecinita.lifecycle import LifecyclePlugin, PluginRegistry, make_lifecycle_event
 from vecinita.volumes import MODELS_PATH
 
 
@@ -78,7 +79,7 @@ class TestDownloadModel:
         app_source_path = Path(__file__).resolve().parents[1] / "src/vecinita/app.py"
         app_source = app_source_path.read_text(encoding="utf-8")
         assert "def download_default_model()" in app_source
-        assert "_download_model_if_missing(settings.default_model)" in app_source
+        assert "_download_model_if_missing(resolve_startup_model_id())" in app_source
 
     def test_download_helper_skips_pull_when_already_present(self):
         app_source_path = Path(__file__).resolve().parents[1] / "src/vecinita/app.py"
@@ -137,53 +138,108 @@ class TestDownloadModel:
         proc.terminate.assert_called_once_with()
 
 
-class TestEnsureDefaultModelDownloaded:
-    def test_pulls_and_commits_when_default_model_missing(self, monkeypatch):
-        model_id = app_module.settings.default_model
-        ollama_name = app_module.SUPPORTED_MODELS[model_id]["ollama_name"]
-        client = MagicMock()
-        client.list.return_value = SimpleNamespace(
-            models=[SimpleNamespace(model="mistral")]
+class TestLifecycleRuntime:
+    def test_startup_lifecycle_retries_then_succeeds(self, monkeypatch):
+        pull = MagicMock(side_effect=[RuntimeError("connection refused"), None])
+        events: list[dict] = []
+        sleep = MagicMock()
+
+        monkeypatch.setattr(app_module.settings, "startup_model", None)
+        monkeypatch.setattr(app_module.settings, "default_model", "gemma3")
+        monkeypatch.setattr(app_module, "_download_model_if_missing", pull)
+        monkeypatch.setattr(app_module, "_emit_lifecycle_event", events.append)
+        monkeypatch.setattr("time.sleep", sleep)
+        monkeypatch.setattr(app_module.settings, "retry_limit", 2)
+        monkeypatch.setattr(app_module.settings, "retry_backoff_ms", 10)
+
+        app_module._run_startup_lifecycle()
+
+        assert pull.call_count == 2
+        assert any(event["event_type"] == "retry" for event in events)
+        assert events[-1]["event_type"] == "preload_success"
+
+    def test_startup_lifecycle_fail_fast_has_required_error_fields(self, monkeypatch):
+        monkeypatch.setattr(app_module.settings, "startup_model", None)
+        monkeypatch.setattr(app_module.settings, "default_model", "gemma3")
+        monkeypatch.setattr(
+            app_module,
+            "_download_model_if_missing",
+            MagicMock(side_effect=RuntimeError("connection refused")),
         )
-        ollama_module = SimpleNamespace(
-            Client=MagicMock(return_value=client),
-            pull=MagicMock(),
+        monkeypatch.setattr(app_module.settings, "retry_limit", 2)
+        monkeypatch.setattr(app_module.settings, "retry_backoff_ms", 1)
+        emitted: list[dict] = []
+        monkeypatch.setattr(app_module, "_emit_lifecycle_event", emitted.append)
+        monkeypatch.setattr("time.sleep", MagicMock())
+
+        with pytest.raises(RuntimeError, match="Startup preload failed"):
+            app_module._run_startup_lifecycle()
+
+        failures = [
+            event for event in emitted if event["event_type"] == "preload_failure"
+        ]
+        failure = failures[0]
+        details = failure["details"]
+        assert details["error_code"] == "STARTUP_PRELOAD_FAILED"
+        assert details["failure_phase"] == "startup"
+        assert details["attempt_count"] == 2
+        assert "recommended_operator_action" in details
+
+    def test_teardown_lifecycle_emits_non_silent_failure(self, monkeypatch):
+        def boom(_context: dict[str, object]) -> None:
+            raise RuntimeError("cleanup denied")
+
+        monkeypatch.setattr(
+            app_module,
+            "_teardown_cache_preserving_hook",
+            boom,
         )
-        commit = MagicMock()
+        emitted: list[dict] = []
+        monkeypatch.setattr(app_module, "_emit_lifecycle_event", emitted.append)
 
-        monkeypatch.setattr(app_module, "models_volume", SimpleNamespace(commit=commit))
-        monkeypatch.setitem(__import__("sys").modules, "ollama", ollama_module)
+        with pytest.raises(RuntimeError, match="cleanup denied"):
+            app_module._run_teardown_lifecycle(correlation_id="cid-1")
 
-        app_module._ensure_default_model_downloaded()
+        assert any(event["event_type"] == "teardown_failure" for event in emitted)
 
-        client.pull.assert_called_once_with(ollama_name)
-        commit.assert_called_once_with()
-
-    def test_skips_pull_when_default_model_present(self, monkeypatch):
-        model_id = app_module.settings.default_model
-        ollama_name = app_module.SUPPORTED_MODELS[model_id]["ollama_name"]
-        client = MagicMock()
-        client.list.return_value = SimpleNamespace(
-            models=[SimpleNamespace(model=ollama_name)]
+    def test_startup_lifecycle_permanent_error_fails_immediately(self, monkeypatch):
+        monkeypatch.setattr(app_module.settings, "startup_model", None)
+        monkeypatch.setattr(app_module.settings, "default_model", "gemma3")
+        monkeypatch.setattr(
+            app_module,
+            "_download_model_if_missing",
+            MagicMock(side_effect=RuntimeError("unsupported model id")),
         )
-        ollama_module = SimpleNamespace(
-            Client=MagicMock(return_value=client),
-            pull=MagicMock(),
-        )
-        commit = MagicMock()
+        monkeypatch.setattr(app_module.settings, "retry_limit", 4)
+        emitted: list[dict] = []
+        monkeypatch.setattr(app_module, "_emit_lifecycle_event", emitted.append)
 
-        monkeypatch.setattr(app_module, "models_volume", SimpleNamespace(commit=commit))
-        monkeypatch.setitem(__import__("sys").modules, "ollama", ollama_module)
+        with pytest.raises(RuntimeError, match="permanent error"):
+            app_module._run_startup_lifecycle()
 
-        app_module._ensure_default_model_downloaded()
+        retries = [event for event in emitted if event["event_type"] == "retry"]
+        assert retries == []
 
-        client.pull.assert_not_called()
-        commit.assert_not_called()
+    def test_teardown_lifecycle_success_event_emitted(self, monkeypatch):
+        emitted: list[dict] = []
+        monkeypatch.setattr(app_module, "_emit_lifecycle_event", emitted.append)
+        app_module._run_teardown_lifecycle(correlation_id="cid-ok")
+        teardown_success = [
+            event for event in emitted if event["event_type"] == "teardown_success"
+        ]
+        assert len(teardown_success) == 1
+        assert teardown_success[0]["details"] == {
+            "cache_preserved": True,
+            "temp_artifacts_cleaned": True,
+        }
 
-    def test_raises_when_default_model_not_in_registry(self, monkeypatch):
-        monkeypatch.setattr(app_module.settings, "default_model", "missing-model")
-        with pytest.raises(RuntimeError, match="not present in SUPPORTED_MODELS"):
-            app_module._ensure_default_model_downloaded()
+    def test_startup_lifecycle_rejects_non_positive_retry_limit(self, monkeypatch):
+        monkeypatch.setattr(app_module.settings, "startup_model", None)
+        monkeypatch.setattr(app_module.settings, "default_model", "gemma3")
+        monkeypatch.setattr(app_module.settings, "retry_limit", 0)
+
+        with pytest.raises(ValueError, match="retry_limit must be >= 1"):
+            app_module._run_startup_lifecycle()
 
 
 class TestDownloadModelIfMissing:
@@ -224,9 +280,10 @@ class TestChatCompletionImplementation:
         )
         monkeypatch.setattr(
             app_module,
-            "_ensure_default_model_downloaded",
+            "_ensure_startup_model_downloaded",
             lambda: None,
         )
+        monkeypatch.setattr(app_module, "_run_teardown_lifecycle", lambda: None)
 
         result = app_module._chat_completion_impl(
             model="gemma3",
@@ -255,9 +312,11 @@ class TestChatCompletionImplementation:
         )
         monkeypatch.setattr(
             app_module,
-            "_ensure_default_model_downloaded",
+            "_ensure_startup_model_downloaded",
             lambda: None,
         )
+        monkeypatch.setattr(app_module, "_run_teardown_lifecycle", lambda: None)
+        monkeypatch.setattr(app_module.settings, "default_model", "gemma3")
 
         app_module._chat_completion_impl(
             model="",
@@ -267,3 +326,50 @@ class TestChatCompletionImplementation:
 
         call_kw = client.chat.call_args.kwargs
         assert call_kw["model"] == "gemma3"
+
+
+class TestLifecycleFoundations:
+    def test_plugin_registry_validates_duplicate_order(self):
+        registry = PluginRegistry("test")
+        registry.register(
+            LifecyclePlugin(
+                plugin_id="a",
+                phase="startup",
+                order=1,
+                hook=lambda _ctx: None,
+            )
+        )
+        with pytest.raises(ValueError, match="Duplicate plugin order"):
+            registry.register(
+                LifecyclePlugin(
+                    plugin_id="b",
+                    phase="startup",
+                    order=1,
+                    hook=lambda _ctx: None,
+                )
+            )
+
+    def test_lifecycle_event_has_required_schema_fields(self):
+        event = make_lifecycle_event(
+            event_type="preload_start",
+            phase="startup",
+            correlation_id="cid-2",
+            details={"x": 1},
+        )
+        assert set(["event_type", "phase", "correlation_id", "timestamp"]).issubset(
+            event.keys()
+        )
+
+    def test_resolve_ollama_model_name_passthrough_and_alias(self):
+        assert app_module._resolve_ollama_model_name("gemma3") == "gemma3"
+        assert app_module._resolve_ollama_model_name("custom:latest") == "custom:latest"
+
+    def test_ensure_default_model_downloaded_aliases_startup_helper(self, monkeypatch):
+        called = {"count": 0}
+
+        def _fake() -> None:
+            called["count"] += 1
+
+        monkeypatch.setattr(app_module, "_ensure_startup_model_downloaded", _fake)
+        app_module._ensure_default_model_downloaded()
+        assert called["count"] == 1

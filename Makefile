@@ -1,4 +1,4 @@
-.PHONY: lint test docker-up docker-down docker-logs docker-pull-model deploy verify-health
+.PHONY: lint test docker-up docker-down docker-logs docker-pull-model deploy warm-default-model deploy-and-warm verify-health
 
 PYTHONWARNINGS ?= ignore:::requests
 
@@ -22,6 +22,12 @@ docker-pull-model:
 
 deploy:
 	PYTHONPATH=src python3 -m modal deploy main.py
+
+# Pull default Ollama weights into the shared Modal volume (same as CI after deploy).
+warm-default-model:
+	PYTHONPATH=src python3 -m modal run src/vecinita/app.py::download_default_model
+
+deploy-and-warm: deploy warm-default-model
 
 verify-health:
 	curl -fsS "$$VECINITA_API_URL/health"
