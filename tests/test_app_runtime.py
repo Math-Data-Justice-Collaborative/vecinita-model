@@ -79,7 +79,8 @@ class TestDownloadModel:
         app_source_path = Path(__file__).resolve().parents[1] / "src/vecinita/app.py"
         app_source = app_source_path.read_text(encoding="utf-8")
         assert "def download_default_model()" in app_source
-        assert "_download_model_if_missing(resolve_startup_model_id())" in app_source
+        assert "resolved = resolve_startup_model_id()" in app_source
+        assert "_download_model_if_missing(resolved)" in app_source
 
     def test_download_helper_skips_pull_when_already_present(self):
         app_source_path = Path(__file__).resolve().parents[1] / "src/vecinita/app.py"

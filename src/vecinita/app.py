@@ -50,6 +50,27 @@ from vecinita.volumes import MODELS_PATH, models_volume
 app = modal.App(settings.app_name)
 logger = logging.getLogger(__name__)
 
+
+def _ensure_vecinita_loggers_visible() -> None:
+    """Send INFO logs for ``vecinita.*`` to stderr so Modal captures them.
+
+    The stdlib root logger defaults to WARNING, so ``logger.info`` would be
+    invisible in Modal logs while ``print`` still appears; this attaches a
+    handler to the package logger so preload/lifecycle messages are visible.
+    """
+    pkg = logging.getLogger("vecinita")
+    pkg.setLevel(logging.INFO)
+    if pkg.handlers:
+        return
+    handler = logging.StreamHandler()
+    handler.setLevel(logging.INFO)
+    handler.setFormatter(logging.Formatter("%(levelname)s %(name)s %(message)s"))
+    pkg.addHandler(handler)
+    pkg.propagate = False
+
+
+_ensure_vecinita_loggers_visible()
+
 # ---------------------------------------------------------------------------
 # Weight pre-loading function
 # ---------------------------------------------------------------------------
@@ -67,6 +88,11 @@ def download_model(model_name: str) -> None:
 
         modal run src/vecinita/app.py::download_model --model-name gemma3
     """
+    logger.info(
+        "download_model entrypoint: pulling configured model into volume "
+        "(model_name=%s)",
+        model_name,
+    )
     if model_name not in SUPPORTED_MODELS:
         supported = ", ".join(SUPPORTED_MODELS)
         raise ValueError(f"Unknown model '{model_name}'. Supported models: {supported}")
@@ -81,7 +107,12 @@ def download_model(model_name: str) -> None:
 )
 def download_default_model() -> None:
     """Ensure the configured default model exists in the shared volume."""
-    _download_model_if_missing(resolve_startup_model_id())
+    resolved = resolve_startup_model_id()
+    logger.info(
+        "download_default_model entrypoint: resolved startup model_id=%s",
+        resolved,
+    )
+    _download_model_if_missing(resolved)
 
 
 @app.function(
@@ -402,6 +433,13 @@ def _download_model_if_missing(model_name: str) -> None:
         )
     ollama_name = metadata["ollama_name"]
 
+    logger.info(
+        "model preload: starting (model_id=%s ollama_name=%s volume=%s)",
+        model_name,
+        ollama_name,
+        MODELS_PATH,
+    )
+
     # Start the Ollama daemon so we can issue pull/list commands through it.
     proc = subprocess.Popen(
         ["ollama", "serve"],
@@ -411,17 +449,33 @@ def _download_model_if_missing(model_name: str) -> None:
     )
     try:
         _wait_for_ollama_ready(timeout_seconds=30)
+        logger.info("model preload: ollama server is ready for pull/list")
         client = ollama.Client(host=settings.ollama_host)
         installed = {m.model for m in client.list().models}
         if ollama_name in installed:
-            print(f"Model '{ollama_name}' already present in volume; skipping pull.")
+            logger.info(
+                "model preload: cache hit - '%s' already in volume; skipping pull "
+                "(installed_count=%s)",
+                ollama_name,
+                len(installed),
+            )
             return
 
-        print(f"Pulling {ollama_name} ...")
-        client.pull(ollama_name)
+        logger.info("model preload: pulling %s into models volume ...", ollama_name)
+        try:
+            client.pull(ollama_name)
+        except Exception:
+            logger.exception(
+                "model preload: pull failed for ollama_name=%s", ollama_name
+            )
+            raise
 
         # Persist changes to the volume.
         models_volume.commit()
-        print(f"Successfully downloaded '{ollama_name}' into the models volume.")
+        logger.info(
+            "model preload: success - committed '%s' to models volume at %s",
+            ollama_name,
+            MODELS_PATH,
+        )
     finally:
         proc.terminate()
