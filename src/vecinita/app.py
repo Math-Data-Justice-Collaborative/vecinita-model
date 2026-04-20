@@ -158,7 +158,8 @@ def _resolve_ollama_model_name(model: str | None) -> str:
     fallback_meta = SUPPORTED_MODELS.get(fallback_id)
     if fallback_meta is None:
         raise RuntimeError(
-            f"default_model {fallback_id!r} is not in SUPPORTED_MODELS; fix Modal configuration."
+            f"default_model {fallback_id!r} is not in SUPPORTED_MODELS; "
+            "fix Modal configuration."
         )
     return str(fallback_meta["ollama_name"])
 

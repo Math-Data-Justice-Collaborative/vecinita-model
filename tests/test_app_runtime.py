@@ -396,7 +396,7 @@ class TestLifecycleFoundations:
         assert app_module._resolve_ollama_model_name("mistral") == "mistral"
         assert app_module._resolve_ollama_model_name("custom:latest") == "gemma3"
 
-    def test_resolve_ollama_model_name_unknown_falls_back_to_configured_default(self, monkeypatch):
+    def test_resolve_unknown_model_falls_back_to_default(self, monkeypatch):
         monkeypatch.setattr(app_module.settings, "default_model", "phi3")
         assert app_module._resolve_ollama_model_name("not-a-real-model") == "phi3"
 
