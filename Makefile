@@ -6,7 +6,7 @@ lint:
 	ruff check .
 
 test:
-	PYTHONWARNINGS="$(PYTHONWARNINGS)" pytest
+	PYTHONWARNINGS="$(PYTHONWARNINGS)" PYTHONPATH=src pytest
 
 docker-up:
 	docker compose up --build -d
